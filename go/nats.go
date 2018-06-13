@@ -52,7 +52,7 @@ var (
 	// DefaultReconnectDelay default reconnect delay
 	DefaultReconnectDelay = time.Second * 15
 	// DefaultPublishRetryDelays default publish retry delays
-	DefaultPublishRetryDelays = []int{0, 10, 20, 30, 60}
+	DefaultPublishRetryDelays = []int{0, 10, 20}
 )
 
 // DefaultNats default nats object
