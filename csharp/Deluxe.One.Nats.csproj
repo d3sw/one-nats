@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>$(PRODUCT_NAME)</AssemblyName>
+    <AssemblyTitle>$(PRODUCT_NAME)</AssemblyTitle>  
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Product>$(PRODUCT_NAME)</Product>
+    <Company>Deluxe Entertainment</Company>
+    <Description>Deluxe One Nats Streaming Client for .NET Core.</Description>
+    <Copyright>Copyright @2018 Deluxe Entertainment</Copyright>
+    <PackageProjectUrl>https://github.com/d3sw/one-nats</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/d3sw/one-nats</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>One Workflow;Nats Streaming Client;CSharp;.NET Core</PackageTags>
+    <NeutralLanguage>en-US</NeutralLanguage>
+    <PackageId>$(PRODUCT_NAME)</PackageId>
+    <Version>$(PRODUCT_VERSION)</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="examples\**" />
+    <EmbeddedResource Remove="examples\**" />
+    <None Remove="examples\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="STAN.Client" Version="0.1.4" />
+  </ItemGroup>
+
+</Project>
