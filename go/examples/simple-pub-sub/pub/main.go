@@ -19,7 +19,7 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/d3sw/go-owf/nats"
+	nats "github.com/d3sw/one-nats/go"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -34,7 +34,8 @@ func main() {
 	go func() {
 		for {
 			seq++
-			nats.Publish(subject, fmt.Sprintf("Message [#%d]", seq))
+			msg := fmt.Sprintf("Message [#%d]", seq)
+			nats.Publish(subject, []byte(msg))
 			// wait
 			select {
 			case <-timer.C:
