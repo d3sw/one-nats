@@ -1,7 +1,6 @@
 package nats
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"sync"
@@ -45,7 +44,7 @@ type INats interface {
 	Subscribe(subject, durable string, cb stan.MsgHandler) (SubToken, error)
 	Unsubscribe(subToken SubToken) error
 	Closesubscribe(subToken SubToken) error
-	Publish(subject string, msg interface{}) error
+	Publish(subject string, data []byte) error
 }
 
 var (
@@ -89,8 +88,8 @@ func Closesubscribe(subToken SubToken) error {
 }
 
 // Publish ...
-func Publish(subj string, msg interface{}) error {
-	return DefaultNats.Publish(subj, msg)
+func Publish(subj string, data []byte) error {
+	return DefaultNats.Publish(subj, data)
 }
 
 type pubAborts struct {
@@ -441,15 +440,10 @@ func (m *Nats) retryWithDelays2(logger *log.Entry, name string, delays []int, cb
 }
 
 // Publish ...
-func (m *Nats) Publish(subj string, v interface{}) error {
-	// get text from data
-	data, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
+func (m *Nats) Publish(subj string, data []byte) error {
 	logger := log.WithFields(log.Fields{"subject": subj, "data": string(data)})
 	// publish now with retries
-	err = m.retryWithDelays(logger, "nats publish", m.PublishRetryDelays, func() error {
+	err := m.retryWithDelays(logger, "nats publish", m.PublishRetryDelays, func() error {
 		return m.internalPublish(subj, data)
 	})
 	if err != nil {

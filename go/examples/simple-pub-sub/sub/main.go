@@ -17,7 +17,7 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/d3sw/go-owf/nats"
+	nats "github.com/d3sw/one-nats/go"
 	"github.com/nats-io/go-nats-streaming"
 	log "github.com/sirupsen/logrus"
 )
