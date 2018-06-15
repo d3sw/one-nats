@@ -44,7 +44,7 @@ public abstract class NatsAbstractSubject {
 		logger.info(String.format("Initialized with name=%s, subject=%s, queue=%s", name, subject, queue));
 	}
 
-	void onMessage(String subject, byte[] data, long sequence) {
+	void onMessage(String subject, byte[] data) {
 		String payload = new String(data);
 		logger.info(String.format("Received message for %s: %s", subject, payload));
 

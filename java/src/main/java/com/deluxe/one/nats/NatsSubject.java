@@ -57,10 +57,10 @@ public class NatsSubject extends NatsAbstractSubject {
 			// Create subject/queue subscription if the queue has been provided
 			if (StringUtils.isNotEmpty(queue)) {
 				logger.info("No subscription. Creating a queue subscription. subject={}, queue={}", subject, queue);
-				subs = conn.subscribe(subject, queue, msg -> onMessage(msg.getSubject(), msg.getData(), -1));
+				subs = conn.subscribe(subject, queue, msg -> onMessage(msg.getSubject(), msg.getData()));
 			} else {
 				logger.info("No subscription. Creating a pub/sub subscription. subject={}", subject);
-				subs = conn.subscribe(subject, msg -> onMessage(msg.getSubject(), msg.getData(), -1));
+				subs = conn.subscribe(subject, msg -> onMessage(msg.getSubject(), msg.getData()));
 			}
 		} catch (Exception ex) {
 			logger.error("Subscription failed with " + ex.getMessage() + " for name " + name, ex);
