@@ -2,7 +2,6 @@ package nats
 
 import (
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
@@ -252,11 +251,6 @@ func (m *Nats) getSubscriptionOptions(durableName string) []stan.SubscriptionOpt
 	ret := []stan.SubscriptionOption{
 		stan.DurableName(durableName), // for durable message
 		stan.MaxInflight(1),           // for processing one message at a time, to avoid timeout
-		// stan.SetManualAckMode(),
-	}
-	// check is in development or not
-	if os.Getenv("APP_ENV") != "development" {
-		ret = append(ret, stan.DeliverAllAvailable()) // for processing old messages in the queue
 	}
 	return ret
 }

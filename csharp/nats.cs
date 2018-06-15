@@ -276,7 +276,6 @@ namespace Deluxe.One.Nats
             var ret = StanSubscriptionOptions.GetDefaultOptions();
             ret.DurableName = durable;
             ret.MaxInflight = 1;
-            ret.DeliverAllAvailable();
             // return
             return ret;
         }
