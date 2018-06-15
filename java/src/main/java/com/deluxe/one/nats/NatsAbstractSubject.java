@@ -2,6 +2,7 @@ package com.deluxe.one.nats;
 
 import io.reactivex.Observable;
 import io.reactivex.ObservableOnSubscribe;
+import org.apache.commons.lang3.ArrayUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,7 +20,7 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 public abstract class NatsAbstractSubject {
 	private static Logger logger = LoggerFactory.getLogger(NatsAbstractSubject.class);
-	private LinkedBlockingQueue<String> messages = new LinkedBlockingQueue<>();
+	private LinkedBlockingQueue<String> received = new LinkedBlockingQueue<>();
 	private final Lock mu = new ReentrantLock();
 	private ScheduledExecutorService execs;
 	String subject;
@@ -27,7 +28,7 @@ public abstract class NatsAbstractSubject {
 	String name;
 
 	// Indicates that observe was called (Event Handler) and we must to re-initiate subscription upon reconnection
-	private boolean observable;
+	private boolean listening;
 	private boolean isOpened;
 
 	NatsAbstractSubject(String name) {
@@ -48,12 +49,12 @@ public abstract class NatsAbstractSubject {
 		String payload = new String(data);
 		logger.info(String.format("Received message for %s: %s", subject, payload));
 
-		messages.add(payload);
+		received.add(payload);
 	}
 
 	public Observable<String> listen() {
 		logger.info("Listen started for " + name);
-		observable = true;
+		listening = true;
 
 		mu.lock();
 		try {
@@ -63,15 +64,27 @@ public abstract class NatsAbstractSubject {
 		}
 
 		ObservableOnSubscribe<String> onSubscribe = subscriber -> {
-			Observable<Long> interval = Observable.interval(100, TimeUnit.MILLISECONDS);
+			Observable<Long> interval = Observable
+					.interval(100, TimeUnit.MILLISECONDS)
+					.takeWhile(p -> listening); // Repeat while listening true
 			interval.flatMap((Long x) -> {
 				List<String> available = new LinkedList<>();
-				messages.drainTo(available);
+				received.drainTo(available);
 				return Observable.fromIterable(available);
 			}).subscribe(subscriber::onNext, subscriber::onError);
 		};
 
 		return Observable.create(onSubscribe);
+	}
+
+	public void forget() {
+		mu.lock();
+		try {
+			closeSubs();
+			listening = false;
+		} finally {
+			mu.unlock();
+		}
 	}
 
 	public void publish(String payload) {
@@ -81,6 +94,33 @@ public abstract class NatsAbstractSubject {
 		} catch (Exception ex) {
 			logger.error("Failed to publish message " + payload + " to " + subject, ex);
 			throw new RuntimeException(ex);
+		}
+	}
+
+	public void publish(String payload, int[] delays, boolean silent) {
+		if (ArrayUtils.isEmpty(delays)) {
+			throw new IllegalArgumentException("No delays specified");
+		}
+
+		try {
+			publish(payload);
+		} catch (Exception eo) {
+			for (int i = 0; i < delays.length; i++) {
+				try {
+					int delay = delays[i];
+					logger.info("Retry in " + delay + " seconds");
+
+					Thread.sleep(delay * 1000L);
+					publish(payload);
+
+					break;
+				} catch (Exception ex) {
+					// Latest attempt
+					if (i == (delays.length - 1) && !silent) {
+						throw new RuntimeException(ex.getMessage(), ex);
+					}
+				}
+			}
 		}
 	}
 
@@ -112,7 +152,7 @@ public abstract class NatsAbstractSubject {
 				connect();
 
 				// Re-initiated subscription if existed
-				if (observable) {
+				if (listening) {
 					subscribe();
 				}
 			} catch (Exception ignore) {
@@ -141,7 +181,7 @@ public abstract class NatsAbstractSubject {
 			connect();
 
 			// Re-initiated subscription if existed
-			if (observable) {
+			if (listening) {
 				subscribe();
 			}
 		} catch (Exception ex) {
