@@ -41,7 +41,11 @@ func main() {
 }
 ```
 
-## c#
+## CSharp
+For CSharp project, the nats client project needs to import the one-nats nuget package:
+nuget server: http://nuget.service.owf-dev:5000
+package ID: Deluxe.One.Nats
+
 ### Publisher
 ```csharp
 using System;
