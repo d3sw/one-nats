@@ -48,7 +48,7 @@ nuget server: http://nuget.service.owf-dev:5000
 package ID: Deluxe.One.Nats
 ```
 ### Publisher
-CSharp publisher example is at [https://github.com/d3sw/one-nats/csharp/examples/pub]
+CSharp publisher example is at [https://github.com/d3sw/one-nats/blob/master/csharp/examples/pub-sub-with-nuget/pub/main.cs]
 ```csharp
     class MyService
     {
@@ -80,7 +80,7 @@ CSharp publisher example is at [https://github.com/d3sw/one-nats/csharp/examples
     }
 ```
 ### Subscribler
-CSharp subsriber example is at [https://github.com/d3sw/one-nats/csharp/examples/pub]
+CSharp subsriber example is at [https://github.com/d3sw/one-nats/blob/master/csharp/examples/pub-sub-with-nuget/sub/main.cs]
 ```csharp
     class MyService
     {
