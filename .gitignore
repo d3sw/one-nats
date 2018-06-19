@@ -1,5 +1,7 @@
 .vscode
 .suo
+*.test
+*.out
 artifacts
 bin
 obj
