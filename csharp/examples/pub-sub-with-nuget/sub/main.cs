@@ -25,31 +25,48 @@
  * permission is obtained from Deluxe.
 
 */
+using STAN.Client;
 using System;
-using Deluxe.One.Nats;
 using System.Threading;
+using Deluxe.One.Nats;
 
-namespace ConsoleApp6
+namespace ConsoleApp1
 {
+    class MyService
+    {
+        public void Start()
+        {
+            nats.DefaultPublishRetryDelays = new TimeSpan[] { TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(60) };
+            nats.Connect("nats://localhost:4222", "test-cluster", "sub_client");
+            // start the subscriber
+            nats.QueueSubscribe("foo_subject", "queue", "durable", (sender, args)=>{
+                Console.WriteLine("Received seq #{0}: {1}", args.Message.Sequence, System.Text.Encoding.UTF8.GetString(args.Message.Data));
+            });            
+        }
+
+        public void Stop()
+        {
+            nats.Close();
+        }
+    }
     class Program
     {
         static void Main()
         {
-            string serverURL = "nats://localhost:4222", clusterID = "test-cluster", clientID = "sub_client", subject = "foo_subject", queue = "foo_queue", durable = "foo_durable";
-            nats.Connect(serverURL, clusterID, clientID);
-            nats.QueueSubscribe(subject, queue, durable, (sender, args)=>{
-                Console.WriteLine("Received seq #{0}: {1}", args.Message.Sequence, System.Text.Encoding.UTF8.GetString(args.Message.Data));
-            });
-             // wait for exit
+            // init
+            var service = new MyService();
+            // start
+            service.Start();
+            // wait for exit
             var ev = new AutoResetEvent(false);
             Console.CancelKeyPress += (sender, e) =>
             {
-                nats.Close();
+                service.Stop();
                 // return
                 e.Cancel = true;
                 ev.Set();
             };
-            Console.WriteLine("program: ctrl+c to exit...");
+            Console.WriteLine("Program started, press ctrl+c to exit...");
             ev.WaitOne();
         }
     }
