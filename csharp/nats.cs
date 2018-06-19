@@ -94,13 +94,15 @@ namespace Deluxe.One.Nats
         /// </summary>
         /// <param name="subject"></param>
         /// <param name="data"></param>
-        void Publish(string subject, byte[] data);
+        /// <param name="delays"></param>
+        void Publish(string subject, byte[] data, TimeSpan[] delays = null);
         /// <summary>
         /// publish message to nats
         /// </summary>
         /// <param name="subject"></param>
         /// <param name="msg"></param>
-        void Publish(string subject, string msg);
+        /// <param name="delays"></param>
+        void Publish(string subject, string msg, TimeSpan[] delays = null);
         /// <summary>
         /// subscribe to nats server
         /// </summary>
@@ -132,6 +134,7 @@ namespace Deluxe.One.Nats
     };
     public class Nats : INats
     {
+        public int MaxInflight = nats.DefaultMaxInflight;
         public TimeSpan[] PublishRetryDelays = nats.DefaultPublishRetryDelays;
         public TimeSpan ReconnectDelay = nats.DefaultReconnectDelay;
         public TimeSpan SubscribeAckWait = nats.DefaultSubscribeAckWait;
@@ -309,16 +312,19 @@ namespace Deluxe.One.Nats
             return error;
         }
 
-        public void Publish(string subject, string msg)
+        public void Publish(string subject, string msg, TimeSpan[] delays = null)
         {
-            Publish(subject, Encoding.UTF8.GetBytes(msg));
+            Publish(subject, Encoding.UTF8.GetBytes(msg), delays);
         }
-        public void Publish(string subject, byte[] data)
+        public void Publish(string subject, byte[] data, TimeSpan[] delays = null)
         {
             Exception error = null;
             Dictionary<string, object> fields;
+            // reset value
+            if (delays == null)
+                delays = PublishRetryDelays;
             // publish with retries
-            for (int idx = 0, sum = PublishRetryDelays.Length; idx <= sum; idx++)
+            for (int idx = 0, sum = delays.Length; idx <= sum; idx++)
             {
                 error = internalPublish(subject, data);
                 if (error == null)
@@ -326,7 +332,7 @@ namespace Deluxe.One.Nats
                 // break now
                 if (idx >= sum)
                     break;
-                var delay = PublishRetryDelays[idx];
+                var delay = delays[idx];
                 fields = new Dictionary<string, object>{
                     { "error", error },
                     { "delay", delay } };
@@ -572,6 +578,7 @@ namespace Deluxe.One.Nats
 
     public static class nats
     {
+        public static int DefaultMaxInflight = 1;
         /// <summary>
         /// default subscribe ack wait time
         /// </summary>
@@ -608,6 +615,7 @@ namespace Deluxe.One.Nats
                         if (_default == null)
                             _default = new Nats(DefaultLogger)
                             {
+                                MaxInflight = DefaultMaxInflight,
                                 PublishRetryDelays = DefaultPublishRetryDelays,
                                 ReconnectDelay = DefaultReconnectDelay,
                                 SubscribeAckWait = DefaultSubscribeAckWait,
