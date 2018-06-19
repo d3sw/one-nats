@@ -48,45 +48,57 @@ nuget server: http://nuget.service.owf-dev:5000
 package ID: Deluxe.One.Nats
 ```
 ### Publisher
+[a CSharp publisher exmaple](csharp/examples/pub)
 ```csharp
-using System;
-using System.Text;
-using Deluxe.One.Nats;
-namespace ConsoleApp1
-{
-    class Program
+    class MyService
     {
-        static void Main()
+        private Thread _thread = null;
+        private ManualResetEvent _abort = new ManualResetEvent(false);
+        public void Start()
         {
+            // customize the default values
+            nats.DefaultPublishRetryDelays = new TimeSpan[] { TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(60) };
+            // connect
             nats.Connect("nats://localhost:4222", "test-cluster", "pub_client");
-            nats.Publish("foo_subject", Encoding.UTF8.GetBytes("message"));
+            // start the process thread
+            _thread = new Thread(onThread);
+            _thread.Start();
+        }
+        private void onThread() {
+            var idx = 0;
+            while(!_abort.WaitOne(TimeSpan.FromSeconds(5))) {
+                var msg = string.Format("message #{0}", ++idx);
+                nats.Publish("foo_subject", System.Text.Encoding.UTF8.GetBytes(msg));
+            }
+        }
+        public void Stop()
+        {
+            _abort.Set();
+            _thread.Join();
             nats.Close();
-            Console.ReadLine();
         }
     }
-}
 ```
 ### Subscribler
+[a CSharp subscribe exmaple](csharp/examples/sub)
 ```csharp
-using System;
-using System.Text;
-using Deluxe.One.Nats;
-namespace ConsoleApp1
-{
-    class Program
+    class MyService
     {
-        static void Main()
+        public void Start()
         {
-            nats.Connect("nats://localhost:4222", "test-cluster", "pub_client");
-            nats.QueueSubscribe("foo_subject", "foo_queue", "foo_durable", (sender, args) =>
-            {
-                Console.WriteLine("received message: {0}", Encoding.UTF8.GetString(args.Message.Data));
-            });
-            Console.ReadLine();
+            nats.DefaultPublishRetryDelays = new TimeSpan[] { TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(60) };
+            nats.Connect("nats://localhost:4222", "test-cluster", "sub_client");
+            // start the subscriber
+            nats.QueueSubscribe("foo_subject", "queue", "durable", (sender, args)=>{
+                Console.WriteLine("Received seq #{0}: {1}", args.Message.Sequence, System.Text.Encoding.UTF8.GetString(args.Message.Data));
+            });            
+        }
+
+        public void Stop()
+        {
             nats.Close();
         }
     }
-}
 ```
 
 ## java
