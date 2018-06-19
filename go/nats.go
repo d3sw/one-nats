@@ -74,48 +74,79 @@ type INats interface {
 }
 
 var (
+	// DefaultMaxInflight default subscriber max inflight messages
+	DefaultMaxInflight = 1
 	// DefaultReconnectDelay default reconnect delay
 	DefaultReconnectDelay = time.Second * 15
 	// DefaultPublishRetryDelays default publish retry delays
-	DefaultPublishRetryDelays = []int{0, 10, 20}
+	DefaultPublishRetryDelays = []time.Duration{time.Second * 0, time.Second * 10, time.Second * 20}
+	// SubscribeAckWait default subscriber Ack wait time
+	DefaultSubscribeAckWait = time.Second * 60
 )
 
 // DefaultNats default nats object
-var DefaultNats INats = &Nats{}
+var (
+	muDefaultNats sync.Mutex
+	DefaultNats   INats
+)
+
+func getDefaultNats() INats {
+	if DefaultNats == nil {
+		muDefaultNats.Lock()
+		defer muDefaultNats.Unlock()
+		if DefaultNats == nil {
+			DefaultNats = &Nats{
+				ReconnectDelay:     DefaultReconnectDelay,
+				PublishRetryDelays: DefaultPublishRetryDelays,
+				SubscribeAckWait:   DefaultSubscribeAckWait,
+				MaxInflight:        DefaultMaxInflight,
+			}
+		}
+	}
+	return DefaultNats
+}
+
+func setDefaultNats(value INats) {
+	muDefaultNats.Lock()
+	defer muDefaultNats.Unlock()
+	DefaultNats = value
+}
 
 // Connect ...
 func Connect(serverURL, clusterID, clientID string) error {
-	return DefaultNats.Connect(serverURL, clusterID, clientID)
+	return getDefaultNats().Connect(serverURL, clusterID, clientID)
 }
 
 // Close ...
 func Close() error {
-	return DefaultNats.Close()
+	err := getDefaultNats().Close()
+	setDefaultNats(nil)
+	return err
 }
 
 // QueueSubscribe ...
 func QueueSubscribe(subject, queue, durable string, cb stan.MsgHandler) (SubToken, error) {
-	return DefaultNats.QueueSubscribe(subject, queue, durable, cb)
+	return getDefaultNats().QueueSubscribe(subject, queue, durable, cb)
 }
 
 // Subscribe ...
 func Subscribe(subject, durable string, cb stan.MsgHandler) (SubToken, error) {
-	return DefaultNats.Subscribe(subject, durable, cb)
+	return getDefaultNats().Subscribe(subject, durable, cb)
 }
 
-// Unsubscribe closes the subscription
+// Unsubscribe unscribe from server
 func Unsubscribe(subToken SubToken) error {
-	return DefaultNats.Unsubscribe(subToken)
+	return getDefaultNats().Unsubscribe(subToken)
 }
 
 // Closesubscribe closes the subscription
 func Closesubscribe(subToken SubToken) error {
-	return DefaultNats.Closesubscribe(subToken)
+	return getDefaultNats().Closesubscribe(subToken)
 }
 
 // Publish ...
 func Publish(subj string, data []byte) error {
-	return DefaultNats.Publish(subj, data)
+	return getDefaultNats().Publish(subj, data)
 }
 
 type pubAborts struct {
@@ -125,17 +156,20 @@ type pubAborts struct {
 
 // Nats ...
 type Nats struct {
-	sync.Mutex                                // token
-	conn               stan.Conn              // nats connection
-	reconnectTimer     *time.Timer            // reconnect timer
-	reconnectAbort     chan bool              // reconnect abort event
-	pubAborts          pubAborts              // pub abort events
-	serverURL          string                 // server url
-	clusterID          string                 // clusterID
-	clientID           string                 // clientID
-	subs               map[SubToken]subRecord // pending subscription
-	ReconnectDelay     time.Duration          // reconnect delay
-	PublishRetryDelays []int                  // publish retry delay in seconds
+	sync.Mutex                            // token
+	conn           stan.Conn              // nats connection
+	reconnectTimer *time.Timer            // reconnect timer
+	reconnectAbort chan bool              // reconnect abort event
+	pubAborts      pubAborts              // pub abort events
+	serverURL      string                 // server url
+	clusterID      string                 // clusterID
+	clientID       string                 // clientID
+	subs           map[SubToken]subRecord // pending subscription
+
+	ReconnectDelay     time.Duration   // reconnect delay
+	PublishRetryDelays []time.Duration // publish retry delay
+	SubscribeAckWait   time.Duration   // subscribe ack wait
+	MaxInflight        int             // subscriber max in flight messages
 }
 
 // subRecord ...
@@ -276,8 +310,9 @@ func (m *Nats) reconnectServer() {
 
 func (m *Nats) getSubscriptionOptions(durableName string) []stan.SubscriptionOption {
 	ret := []stan.SubscriptionOption{
-		stan.DurableName(durableName), // for durable message
-		stan.MaxInflight(1),           // for processing one message at a time, to avoid timeout
+		stan.DurableName(durableName),    // for durable message
+		stan.MaxInflight(m.MaxInflight),  // for processing one message at a time, to avoid timeout
+		stan.AckWait(m.SubscribeAckWait), // for subscribe ack wait time
 	}
 	return ret
 }
@@ -382,7 +417,7 @@ func (m *Nats) Closesubscribe(subToken SubToken) error {
 	if err != nil {
 		logger.WithFields(log.Fields{"error": err}).Warn("nats closesubscribe failed")
 	} else {
-		logger.Info("nats closesubscription completed")
+		logger.Info("nats closesubscribe completed")
 	}
 	// return
 	return err
@@ -400,7 +435,7 @@ func (m *Nats) internalPublish(subject string, data []byte) error {
 	return err
 }
 
-func (m *Nats) retryWithDelays(logger *log.Entry, name string, delays []int, cb func() error) error {
+func (m *Nats) retryWithDelays(logger *log.Entry, name string, delays []time.Duration, cb func() error) error {
 	var err error
 	abort := make(chan bool)
 	m.pubAborts.Lock()
@@ -427,7 +462,7 @@ func (m *Nats) retryWithDelays(logger *log.Entry, name string, delays []int, cb 
 		// update logger
 		logger = logger.WithField("retry", idx+1)
 		// delay
-		delay := time.Second * time.Duration(delays[idx])
+		delay := delays[idx]
 		logger.WithFields(log.Fields{"error": err, "delay": delay}).Warnf("%s failed, retry in %s...", name, delay)
 		// wait now
 		select {
@@ -436,26 +471,6 @@ func (m *Nats) retryWithDelays(logger *log.Entry, name string, delays []int, cb 
 			isAborted = true
 			break
 		}
-	}
-	return err
-}
-
-func (m *Nats) retryWithDelays2(logger *log.Entry, name string, delays []int, cb func() error) error {
-	var err error
-	for idx, sum := 0, len(delays); idx <= sum; idx++ {
-		if err = cb(); err == nil {
-			break
-		}
-		// break now
-		if idx >= sum {
-			break
-		}
-		// update logger
-		logger = logger.WithField("retry", idx+1)
-		// now wait for a while
-		delay := time.Second * time.Duration(delays[idx])
-		logger.WithFields(log.Fields{"error": err, "delay": delay}).Warnf("%s failed, retry in %d seconds...", name, delays[idx])
-		time.Sleep(delay)
 	}
 	return err
 }

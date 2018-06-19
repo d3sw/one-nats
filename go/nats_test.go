@@ -31,6 +31,7 @@ import (
 	"bytes"
 	"errors"
 	"testing"
+	"time"
 
 	gonats "github.com/nats-io/go-nats"
 	"github.com/nats-io/go-nats-streaming"
@@ -125,8 +126,8 @@ func (m *MockNats) Closesubscribe(subToken SubToken) error {
 	args := m.Called(subToken)
 	return args.Error(0)
 }
-func (m *MockNats) Publish(subject string, msg interface{}) error {
-	args := m.Called(subject, msg)
+func (m *MockNats) Publish(subject string, data []byte) error {
+	args := m.Called(subject, data)
 	return args.Error(0)
 }
 
@@ -217,6 +218,7 @@ func Test_Connect_Error(t *testing.T) {
 	mockStan.On("StanConnect", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, errors.New(errmsg))
 	// run
 	Connect("", "", "")
+	Close()
 	// assert
 	mockStan.AssertNumberOfCalls(t, "StanConnect", 1)
 	assert.Contains(t, logs.String(), errmsg)
@@ -226,10 +228,12 @@ func Test_Connect_OK(t *testing.T) {
 	logs := setupLogs()
 	// mock
 	conn := &MockConn{}
+	conn.On("Close").Return(nil)
 	mockStan := NewMockStan()
 	mockStan.On("StanConnect", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(conn, nil)
 	// run
 	Connect("", "", "")
+	Close()
 	// assert
 	mockStan.AssertNumberOfCalls(t, "StanConnect", 1)
 	assert.Contains(t, logs.String(), "nats connection completed")
@@ -248,6 +252,7 @@ func Test_Subscribe_Error(t *testing.T) {
 	// run
 	Connect("", "", "")
 	Subscribe("foo", "durable", func(msg *stan.Msg) {})
+	Close()
 	// assert
 	assert.Contains(t, logs.String(), errmsg)
 }
@@ -256,6 +261,7 @@ func Test_Subscribe_OK(t *testing.T) {
 	logs := setupLogs()
 	// mock
 	mockSub := &MockSub{}
+	mockSub.On("Close").Return(nil)
 	mockConn := &MockConn{}
 	mockConn.On("Subscribe", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(mockSub, nil)
 	mockConn.On("Close").Return(nil)
@@ -264,6 +270,7 @@ func Test_Subscribe_OK(t *testing.T) {
 	// run
 	Connect("", "", "")
 	Subscribe("foo", "durable", func(msg *stan.Msg) {})
+	Close()
 	// assert
 	assert.Contains(t, logs.String(), "nats subscribe completed")
 }
@@ -278,10 +285,196 @@ func Test_Publish_Error(t *testing.T) {
 	mockStan := NewMockStan()
 	mockStan.On("StanConnect", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(mockConn, nil)
 	// run
-	DefaultNats = &Nats{PublishRetryDelays: []int{0}}
+	DefaultPublishRetryDelays = []time.Duration{time.Second * 0}
 	Connect("", "", "")
-	err := Publish("subject", "message")
+	err := Publish("subject", []byte("message"))
+	Close()
 	// assert
 	assert.NotNil(t, err, "publish failed")
 	assert.Contains(t, logs.String(), errmsg)
+}
+
+func Test_Publish_Error_Force_Close(t *testing.T) {
+	logs := setupLogs()
+	errmsg := "some error at publish 123"
+	// mock
+	mockConn := &MockConn{}
+	mockConn.On("Publish", mock.Anything, mock.Anything, mock.Anything).Return(errors.New(errmsg))
+	mockConn.On("Close").Return(nil)
+	mockStan := NewMockStan()
+	mockStan.On("StanConnect", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(mockConn, nil)
+	// run
+	DefaultPublishRetryDelays = []time.Duration{time.Millisecond * 100, time.Millisecond * 100, time.Millisecond * 100, time.Millisecond * 100, time.Millisecond * 100, time.Millisecond * 100, time.Millisecond * 100}
+	Connect("", "", "")
+	go Publish("subject", []byte("message"))
+	time.Sleep(time.Millisecond * 300)
+	Close()
+	// assert
+	assert.Contains(t, logs.String(), errmsg)
+	assert.Contains(t, logs.String(), "nats publish failed, retry in 100ms")
+}
+
+func Test_Publish_OK(t *testing.T) {
+	logs := setupLogs()
+	// mock
+	mockConn := &MockConn{}
+	mockConn.On("Publish", mock.Anything, mock.Anything).Return(nil)
+	mockConn.On("Close").Return(nil)
+	mockStan := NewMockStan()
+	mockStan.On("StanConnect", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(mockConn, nil)
+	// run
+	Connect("", "", "")
+	err := Publish("subject", []byte("message"))
+	Close()
+	// assert
+	assert.Nil(t, err, "nats pubblish completed")
+	assert.Contains(t, logs.String(), "nats publish completed")
+}
+
+func Test_Unsubscribe_Error(t *testing.T) {
+	logs := setupLogs()
+	errmsg := "unsubscribe failed with error 123"
+	// mock
+	mockSub := &MockSub{}
+	mockSub.On("Close").Return(nil)
+	mockSub.On("Unsubscribe").Return(errors.New(errmsg))
+	mockConn := &MockConn{}
+	mockConn.On("Subscribe", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(mockSub, nil)
+	mockConn.On("Close").Return(nil)
+	mockStan := NewMockStan()
+	mockStan.On("StanConnect", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(mockConn, nil)
+	// run
+	Connect("", "", "")
+	sub, _ := Subscribe("foo", "durable", func(msg *stan.Msg) {})
+	Unsubscribe(sub)
+	Close()
+	// assert
+	assert.Contains(t, logs.String(), "nats subscribe completed")
+	assert.Contains(t, logs.String(), errmsg)
+}
+
+func Test_Unsubscribe_Not_Exists(t *testing.T) {
+	// mock
+	mockSub := &MockSub{}
+	mockSub.On("Close").Return(nil)
+	mockSub.On("Unsubscribe").Return(nil)
+	mockConn := &MockConn{}
+	mockConn.On("Subscribe", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(mockSub, nil)
+	mockConn.On("Close").Return(nil)
+	mockStan := NewMockStan()
+	mockStan.On("StanConnect", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(mockConn, nil)
+	// run
+	Connect("", "", "")
+	err := Unsubscribe(SubToken("not exists id"))
+	Close()
+	// assert
+	assert.NotNil(t, err)
+	assert.Contains(t, err.Error(), "nats subscription not found")
+}
+
+func Test_Unsubscribe_OK(t *testing.T) {
+	logs := setupLogs()
+	// mock
+	mockSub := &MockSub{}
+	mockSub.On("Close").Return(nil)
+	mockSub.On("Unsubscribe").Return(nil)
+	mockConn := &MockConn{}
+	mockConn.On("Subscribe", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(mockSub, nil)
+	mockConn.On("Close").Return(nil)
+	mockStan := NewMockStan()
+	mockStan.On("StanConnect", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(mockConn, nil)
+	// run
+	Connect("", "", "")
+	sub, _ := Subscribe("foo", "durable", func(msg *stan.Msg) {})
+	Unsubscribe(sub)
+	Close()
+	// assert
+	assert.Contains(t, logs.String(), "nats subscribe completed")
+	assert.Contains(t, logs.String(), "nats unsubscribe completed")
+}
+func Test_Closesubscribe_Error(t *testing.T) {
+	logs := setupLogs()
+	errmsg := "closesubscribe failed with error 123"
+	// mock
+	mockSub := &MockSub{}
+	mockSub.On("Close").Return(errors.New(errmsg))
+	mockConn := &MockConn{}
+	mockConn.On("Subscribe", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(mockSub, nil)
+	mockConn.On("Close").Return(nil)
+	mockStan := NewMockStan()
+	mockStan.On("StanConnect", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(mockConn, nil)
+	// run
+	Connect("", "", "")
+	sub, _ := Subscribe("foo", "durable", func(msg *stan.Msg) {})
+	Closesubscribe(sub)
+	Close()
+	// assert
+	assert.Contains(t, logs.String(), "nats subscribe completed")
+	assert.Contains(t, logs.String(), errmsg)
+}
+func Test_Closesubscribe_OK(t *testing.T) {
+	logs := setupLogs()
+	// mock
+	mockSub := &MockSub{}
+	mockSub.On("Close").Return(nil)
+	mockConn := &MockConn{}
+	mockConn.On("Subscribe", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(mockSub, nil)
+	mockConn.On("Close").Return(nil)
+	mockStan := NewMockStan()
+	mockStan.On("StanConnect", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(mockConn, nil)
+	// run
+	Connect("", "", "")
+	sub, _ := Subscribe("foo", "durable", func(msg *stan.Msg) {})
+	Closesubscribe(sub)
+	Close()
+	// assert
+	assert.Contains(t, logs.String(), "nats subscribe completed")
+	assert.Contains(t, logs.String(), "nats closesubscribe completed")
+}
+
+func Test_Custom_Settings(t *testing.T) {
+	setupLogs()
+	// mock
+	mockConn := &MockConn{}
+	mockConn.On("Publish", mock.Anything, mock.Anything).Return(nil)
+	mockConn.On("Close").Return(nil)
+	mockStan := NewMockStan()
+	mockStan.On("StanConnect", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(mockConn, nil)
+	// run
+	DefaultMaxInflight = 101
+	DefaultPublishRetryDelays = []time.Duration{time.Second * 102}
+	DefaultReconnectDelay = time.Second * 103
+	DefaultSubscribeAckWait = time.Second * 104
+	Connect("", "", "")
+	Publish("subject", []byte("message"))
+	defNats := DefaultNats.(*Nats)
+	Close()
+	// assert
+	assert.Equal(t, 101, defNats.MaxInflight)
+	assert.Equal(t, time.Second*102, defNats.PublishRetryDelays[0])
+	assert.Equal(t, time.Second*103, defNats.ReconnectDelay)
+	assert.Equal(t, time.Second*104, defNats.SubscribeAckWait)
+}
+
+func Test_Reconnect(t *testing.T) {
+	logs := setupLogs()
+	errmsg := "ping failed with error 123"
+	// mock
+	mockSub := &MockSub{}
+	mockSub.On("Close").Return(nil)
+	mockConn := &MockConn{}
+	mockConn.On("Subscribe", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(mockSub, nil)
+	mockConn.On("Publish", mock.Anything, mock.Anything, mock.Anything).Return(errors.New(errmsg))
+	mockConn.On("Close").Return(nil)
+	mockStan := NewMockStan()
+	mockStan.On("StanConnect", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(mockConn, nil)
+	// run
+	DefaultReconnectDelay = time.Millisecond * 1
+	Connect("", "", "")
+	Subscribe("foo", "durable", func(msg *stan.Msg) {})
+	time.Sleep(time.Second * 1)
+	Close()
+	// assert
+	assert.Contains(t, logs.String(), "nats ping server failed, reconnect now...")
+	assert.Contains(t, logs.String(), "nats subscribe completed")
 }
