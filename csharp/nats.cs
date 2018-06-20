@@ -318,6 +318,10 @@ namespace Deluxe.One.Nats
         }
         public void Publish(string subject, byte[] data, TimeSpan[] delays = null)
         {
+            // check value
+            if (string.IsNullOrWhiteSpace(subject))
+                throw new ApplicationException("invalid parameter. subject is empty");
+            // init
             Exception error = null;
             Dictionary<string, object> fields;
             // reset value
@@ -654,18 +658,20 @@ namespace Deluxe.One.Nats
         /// </summary>
         /// <param name="subject"></param>
         /// <param name="data"></param>
-        public static void Publish(string subject, byte[] data)
+        /// <param name="delays"></param>
+        public static void Publish(string subject, byte[] data, TimeSpan[] delays = null)
         {
-            Default.Publish(subject, data);
+            Default.Publish(subject, data, delays);
         }
         /// <summary>
         /// publish message to server with string
         /// </summary>
         /// <param name="subject"></param>
         /// <param name="msg"></param>
-        public static void Publish(string subject, string msg)
+        /// <param name="delays"></param>
+        public static void Publish(string subject, string msg, TimeSpan[] delays = null)
         {
-            Default.Publish(subject, msg);
+            Default.Publish(subject, msg, delays);
         }
         /// <summary>
         /// subscribe to a channel

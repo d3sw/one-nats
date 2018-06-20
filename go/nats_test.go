@@ -275,6 +275,24 @@ func Test_Subscribe_OK(t *testing.T) {
 	assert.Contains(t, logs.String(), "nats subscribe completed")
 }
 
+func Test_Publish_Subject_Empty(t *testing.T) {
+	setupLogs()
+	// mock
+	mockConn := &MockConn{}
+	mockConn.On("Publish", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	mockConn.On("Close").Return(nil)
+	mockStan := NewMockStan()
+	mockStan.On("StanConnect", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(mockConn, nil)
+	// run
+	DefaultPublishRetryDelays = []time.Duration{time.Second * 0}
+	Connect("", "", "")
+	err := Publish("", []byte("message"))
+	Close()
+	// assert
+	assert.NotNil(t, err, "publish failed")
+	assert.Contains(t, err.Error(), "invalid parameter")
+}
+
 func Test_Publish_Error(t *testing.T) {
 	logs := setupLogs()
 	errmsg := "some error at publish"

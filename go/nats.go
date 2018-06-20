@@ -28,6 +28,7 @@
 package nats
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -477,6 +478,11 @@ func (m *Nats) retryWithDelays(logger *log.Entry, name string, delays []time.Dur
 
 // Publish ...
 func (m *Nats) Publish(subj string, data []byte) error {
+	// check
+	if subj == "" {
+		return errors.New("invalid parameter. subject is empty")
+	}
+	// logger
 	logger := log.WithFields(log.Fields{"subject": subj, "data": string(data)})
 	// publish now with retries
 	err := m.retryWithDelays(logger, "nats publish", m.PublishRetryDelays, func() error {
