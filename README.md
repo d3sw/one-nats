@@ -133,19 +133,22 @@ CSharp subsriber example is at [https://github.com/d3sw/one-nats/blob/master/csh
 ```csharp
     class MyService
     {
-        public void Start()
+        public void Startup()
         {
             nats.DefaultPublishRetryDelays = new TimeSpan[] { TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(60) };
             nats.Connect("nats://localhost:4222", "test-cluster", "sub_client");
             // start the subscriber
-            nats.QueueSubscribe("foo_subject", "queue", "durable", (sender, args)=>{
-                Console.WriteLine("Received seq #{0}: {1}", args.Message.Sequence, System.Text.Encoding.UTF8.GetString(args.Message.Data));
-            });            
+            nats.QueueSubscribe("foo_subject", "queue", "durable", onReceived);
         }
 
-        public void Stop()
+        public void Shutdown()
         {
             nats.Close();
+        }
+
+        private void onReceived(object sender, StanMsgHandlerArgs args)
+        {
+            Console.WriteLine("Received seq #{0}: {1}", args.Message.Sequence, System.Text.Encoding.UTF8.GetString(args.Message.Data));
         }
     }
 ```
