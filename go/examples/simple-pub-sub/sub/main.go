@@ -36,32 +36,47 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// MyService ...
+type MyService struct {
+}
+
+// Startup ...
+func (m *MyService) Startup() error {
+	// init
+	nats.Connect("nats://localhost:4222", "test-cluster", "sub_client")
+	nats.QueueSubscribe("foo_subject", "foo_queue", "foo_durable", m.onReceived)
+	return nil
+}
+
+func (m *MyService) onReceived(msg *stan.Msg) {
+	log.WithFields(log.Fields{"message": msg.String()}).Info("received message")
+}
+
+// Shutdown ...
+func (m *MyService) Shutdown() error {
+	// close the nats
+	nats.Close()
+	return nil
+}
+
 func main() {
 	// init
 	log.SetFormatter(&log.TextFormatter{DisableColors: true, QuoteEmptyFields: true})
+	myService := MyService{}
 	// connect
-	serverURL, clusterID, clientID := "nats://localhost:4222", "test-cluster", "client_1"
-	subject, queue, durable := "foo_subject", "foo_queue", "foo_durable"
-	// connect
-	nats.Connect(serverURL, clusterID, clientID)
-	log.Info("nats connected")
-	// subscribe
-	nats.QueueSubscribe(subject, queue, durable, func(m *stan.Msg) {
-		log.WithFields(log.Fields{"message": m.String()}).Info("Received message")
-	})
-	log.Info("nats subscribed")
+	myService.Startup()
+
 	// Wait for a SIGINT (perhaps triggered by user with CTRL-C)
 	// Run cleanup when signal is received
-	signalChan := make(chan os.Signal, 1)
-	cleanupDone := make(chan bool)
-	signal.Notify(signalChan, os.Interrupt)
+	exit, done := make(chan os.Signal, 1), make(chan bool)
+	signal.Notify(exit, os.Interrupt)
 	go func() {
-		for range signalChan {
+		for range exit {
 			// close nats
 			nats.Close()
 			// all done
-			cleanupDone <- true
+			done <- true
 		}
 	}()
-	<-cleanupDone
+	<-done
 }
