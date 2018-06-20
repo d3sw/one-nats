@@ -90,6 +90,54 @@ namespace tests
         }
 
         [TestMethod]
+        public void Test_Publish_Subject_Null()
+        {
+            var logger = new TextLogger();
+            Exception error = null;
+            // mock
+            var mockConn = new Mock<IStanConnection>();
+            var mockFactory = new Mock<INatsFactory>();
+            mockFactory.Setup(m => m.CreateConnection(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<StanOptions>())).Returns(mockConn.Object);
+            nats.DefaultFactory = mockFactory.Object;
+            nats.DefaultLogger = logger;
+            // run
+            nats.Connect("", "", "");
+            try
+            {
+                nats.Publish(null, "message");
+            }
+            catch (Exception ex){ error = ex; }
+            nats.Close();
+            // verify
+            Assert.IsNotNull(error, "should have error");
+            StringAssert.Contains(error.ToString(), "invalid parameter");
+        }
+
+        [TestMethod]
+        public void Test_Publish_Subject_Empty()
+        {
+            var logger = new TextLogger();
+            Exception error = null;
+            // mock
+            var mockConn = new Mock<IStanConnection>();
+            var mockFactory = new Mock<INatsFactory>();
+            mockFactory.Setup(m => m.CreateConnection(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<StanOptions>())).Returns(mockConn.Object);
+            nats.DefaultFactory = mockFactory.Object;
+            nats.DefaultLogger = logger;
+            // run
+            nats.Connect("", "", "");
+            try
+            {
+                nats.Publish("", "message");
+            }
+            catch (Exception ex) { error = ex; }
+            nats.Close();
+            // verify
+            Assert.IsNotNull(error, "should have error");
+            StringAssert.Contains(error.ToString(), "invalid parameter");
+        }
+
+        [TestMethod]
         public void Test_Publish_Error()
         {
             var errmsg = "nats publish error";
@@ -155,16 +203,16 @@ namespace tests
             var mockConn = new Mock<IStanConnection>();
             var mockFactory = new Mock<INatsFactory>();
             mockFactory.Setup(m => m.CreateConnection(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<StanOptions>())).Returns(mockConn.Object);
-            mockConn.Setup(m => m.Subscribe(It.IsAny<string>(), It.IsAny< StanSubscriptionOptions>(), It.IsAny<EventHandler<StanMsgHandlerArgs>>())).Callback(() =>
-            {
-                throw new Exception(errmsg);
-            });
+            mockConn.Setup(m => m.Subscribe(It.IsAny<string>(), It.IsAny<StanSubscriptionOptions>(), It.IsAny<EventHandler<StanMsgHandlerArgs>>())).Callback(() =>
+           {
+               throw new Exception(errmsg);
+           });
             nats.DefaultPublishRetryDelays = new TimeSpan[] { TimeSpan.FromMilliseconds(1) };
             nats.DefaultFactory = mockFactory.Object;
             nats.DefaultLogger = logger;
             // run
             nats.Connect("", "", "");
-            nats.Subscribe("subject", "durable", (e, args)=>{} );
+            nats.Subscribe("subject", "durable", (e, args) => { });
             nats.Close();
             // verify
             StringAssert.Contains(logger.ToString(), errmsg);
