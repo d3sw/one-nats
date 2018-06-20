@@ -14,30 +14,79 @@ One-Nats is an imporved nats streaming library, it's a wrapper on the top of the
 # Usage
 ## go
 ### Publisher
+Go publisher example is at [https://github.com/d3sw/one-nats/blob/master/go/examples/simple-pub-sub/pub/main.cs]
 ```go
-package main
-import nats "github.com/d3sw/one-nats/go"
-func main() {
+
+// MyService ...
+type MyService struct {
+	threadAbort, threadDone chan bool
+}
+
+// Startup ...
+func (m *MyService) Startup() error {
+	// init
 	nats.Connect("nats://localhost:4222", "test-cluster", "pub_client")
-	nats.Publish("foo_subject", []byte("foot_message"))
+	m.threadAbort = make(chan bool)
+	m.threadDone = make(chan bool)
+	// run
+	go m.run()
+	return nil
+}
+
+func (m *MyService) waitOne(abort chan bool, delay time.Duration) bool {
+	select {
+	case <-time.After(time.Second * 5):
+		return false
+	case <-m.threadAbort:
+		return true
+	}
+}
+
+func (m *MyService) run() {
+	seq := 0
+	for !m.waitOne(m.threadAbort, time.Second*5) {
+		seq++
+		msg := fmt.Sprintf("Message [#%d]", seq)
+		nats.Publish("foo_subject", []byte(msg))
+	}
+	m.threadDone <- true
+}
+
+// Shutdown ...
+func (m *MyService) Shutdown() error {
+	// abort thread and wait
+	m.threadAbort <- true
+	<-m.threadDone
+	// close the nats
 	nats.Close()
+	return nil
 }
 ```
 ### Subscriber
+Go publisher example is at [https://github.com/d3sw/one-nats/blob/master/go/examples/simple-pub-sub/sub/main.cs]
 ```go
-import (
-	"fmt"
-	"log"
-	nats "github.com/d3sw/one-nats/go"
-	"github.com/nats-io/go-nats-streaming"
-)
-func main() {
-	nats.Connect("nats://localhost:4222", "test-cluster", "pub_client")
-	nats.QueueSubscribe("foo_subject", "foo_queue", "foo_durable", func(msg *stan.Msg) {
-		log.Printf("Received on [%s]: '%s'\n", msg.Subject, msg)
-	})
-	fmt.Scanln()
+
+// MyService ...
+type MyService struct {
+}
+
+// Startup ...
+func (m *MyService) Startup() error {
+	// init
+	nats.Connect("nats://localhost:4222", "test-cluster", "sub_client")
+	nats.QueueSubscribe("foo_subject", "foo_queue", "foo_durable", m.onReceived)
+	return nil
+}
+
+func (m *MyService) onReceived(msg *stan.Msg) {
+	log.WithFields(log.Fields{"message": msg.String()}).Info("received message")
+}
+
+// Shutdown ...
+func (m *MyService) Shutdown() error {
+	// close the nats
 	nats.Close()
+	return nil
 }
 ```
 
