@@ -6,11 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="STAN.Client" Version="0.1.4" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\..\Deluxe.One.Nats.csproj" />
+    <PackageReference Include="Deluxe.One.Nats" Version="0.1.4" />
   </ItemGroup>
 
 </Project>

@@ -4,10 +4,12 @@ build:
     workdir: /build
     environment:
       - PRODUCT_NAME=Deluxe.One.Nats
-      - PRODUCT_VERSION=0.1.2
+      - PRODUCT_VERSION=0.1.7
       - NUGET_HOST=http://nuget.service.owf-dev:5000
       - NUGET_KEY=8d8dc87c-b145-4591-9a2b-e377e0f93aa0
     commands: 
       - dotnet restore -r debian.8-x64 /build/csharp/$PRODUCT_NAME.csproj -s https://api.nuget.org/v3/index.json
+      - dotnet test /build/csharp/tests/Deluxe.One.Nats.Tests.csproj
       - dotnet pack -c Release /build/csharp/$PRODUCT_NAME.csproj --version-suffix $PRODUCT_VERSION -o /build/artifacts
+      ## - dotnet nuget delete $PRODUCT_NAME $PRODUCT_VERSION -k $NUGET_KEY -s $NUGET_HOST --non-interactive
       - dotnet nuget push /build/artifacts/$PRODUCT_NAME.$PRODUCT_VERSION.nupkg -k $NUGET_KEY -s $NUGET_HOST || true
