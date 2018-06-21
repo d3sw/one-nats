@@ -28,6 +28,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 using STAN.Client;
@@ -83,8 +84,8 @@ namespace Deluxe.One.Nats
         /// </summary>
         /// <param name="serverURL"></param>
         /// <param name="clusterID"></param>
-        /// <param name="clientID"></param>
-        void Connect(string serverURL, string clusterID, string clientID);
+        /// <param name="serviceID"></param>
+        void Connect(string serverURL, string clusterID, string serviceID);
         /// <summary>
         /// close connection to nats
         /// </summary>
@@ -142,7 +143,7 @@ namespace Deluxe.One.Nats
 
         private object _token = new object();
         private STAN.Client.IStanConnection _conn = null;
-        private string _serverURL, _clusterID, _clientID;
+        private string _serverURL, _clusterID, _clientID, _serviceID;
         private AutoResetEvent _reconnectAbort = new AutoResetEvent(false);
         private ManualResetEvent _publishAbort = new ManualResetEvent(false);
         private Dictionary<string, SubRecord> _subs = new Dictionary<string, SubRecord>();
@@ -164,6 +165,8 @@ namespace Deluxe.One.Nats
             {
                 if (_conn != null)
                     return null;
+                // create a new clientID
+                _clientID = string.Format("{0}-{1}", _serviceID, Guid.NewGuid());
                 // fields
                 var fields = new Dictionary<string, object>{
                     { "clusterID", _clusterID }, {"clientID", _clientID }, {"serverURL", _serverURL},
@@ -199,27 +202,27 @@ namespace Deluxe.One.Nats
             // return
             return error;
         }
-        public void Connect(string serverURL, string clusterID, string clientID)
+        public void Connect(string serverURL, string clusterID, string serviceID)
         {
             // reset values
             if (string.IsNullOrEmpty(serverURL))
                 serverURL = "nats://localhost:4222";
             if (string.IsNullOrEmpty(clusterID))
                 clusterID = "test-cluster";
-            if (string.IsNullOrEmpty(clientID))
-                clientID = Guid.NewGuid().ToString();
+            if (string.IsNullOrEmpty(serviceID))
+                serviceID = "service";
             // save settings
             _serverURL = serverURL;
             _clusterID = clusterID;
-            _clientID = clientID;
+            _serviceID = getServiceID(serviceID);
             // now connect to nats
             var error = reconnect();
             if (error != null)
             {
                 var fields = new Dictionary<string, object>{
-                    { "clusterID",clusterID},
-                    { "clientID", clientID },
-                    { "serverURL", serverURL },
+                    { "clusterID", _clusterID},
+                    { "clientID", _clientID },
+                    { "serverURL", _serverURL },
                     { "error", error } };
                 logWarn(fields, "nats connection failed at connect, retry at {0}...", DateTime.Now + ReconnectDelay);
             }
@@ -242,6 +245,13 @@ namespace Deluxe.One.Nats
             // close the 
             internalClose();
             logInfo(null, "nats closed");
+        }
+
+        private string getServiceID(string serviceID) {
+            var ret = Regex.Replace(serviceID, "(^.+?-).{8}-.{4}-.{4}-.{4}-.{12}$", "$1").Trim('-');
+            if (string.IsNullOrWhiteSpace(ret))
+                ret = serviceID;
+            return ret;
         }
 
         private void internalClose()
@@ -640,10 +650,10 @@ namespace Deluxe.One.Nats
         /// </summary>
         /// <param name="serverURL"></param>
         /// <param name="clusterID"></param>
-        /// <param name="clientID"></param>
-        public static void Connect(string serverURL, string clusterID, string clientID)
+        /// <param name="serviceID"></param>
+        public static void Connect(string serverURL, string clusterID, string serviceID)
         {
-            Default.Connect(serverURL, clusterID, clientID);
+            Default.Connect(serverURL, clusterID, serviceID);
         }
         /// <summary>
         /// close the connection
