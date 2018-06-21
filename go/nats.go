@@ -30,6 +30,8 @@ package nats
 import (
 	"errors"
 	"fmt"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -65,12 +67,19 @@ func (m *Stan) StanConnect(stanClusterID, clientID string, options ...stan.Optio
 
 // INats nats interface
 type INats interface {
-	Connect(serverURL, clusterID, clientID string) error
+	// Connect connects to nat server
+	Connect(serverURL, clusterID, serverID string) error
+	// Close closes connect to nats server
 	Close() error
+	// QueueSubscribe subscribes to a group channed
 	QueueSubscribe(subject, queue, durable string, cb stan.MsgHandler) (SubToken, error)
+	// Subscribe subscribes to a channel
 	Subscribe(subject, durable string, cb stan.MsgHandler) (SubToken, error)
+	// Unsubscribe unscribe to a subscription
 	Unsubscribe(subToken SubToken) error
+	// Closesubscribe close a subscription
 	Closesubscribe(subToken SubToken) error
+	// Publish publishs a message
 	Publish(subject string, data []byte) error
 }
 
@@ -114,8 +123,8 @@ func setDefaultNats(value INats) {
 }
 
 // Connect ...
-func Connect(serverURL, clusterID, clientID string) error {
-	return getDefaultNats().Connect(serverURL, clusterID, clientID)
+func Connect(serverURL, clusterID, serviceID string) error {
+	return getDefaultNats().Connect(serverURL, clusterID, serviceID)
 }
 
 // Close ...
@@ -164,6 +173,7 @@ type Nats struct {
 	pubAborts      pubAborts              // pub abort events
 	serverURL      string                 // server url
 	clusterID      string                 // clusterID
+	serviceID      string                 // serviceID
 	clientID       string                 // clientID
 	subs           map[SubToken]subRecord // pending subscription
 
@@ -183,7 +193,7 @@ type subRecord struct {
 }
 
 // Connect ...
-func (m *Nats) Connect(serverURL, clusterID, clientID string) error {
+func (m *Nats) Connect(serverURL, clusterID, serviceID string) error {
 	// reset values
 	if serverURL == "" {
 		serverURL = "nats://localhost:4222"
@@ -191,8 +201,8 @@ func (m *Nats) Connect(serverURL, clusterID, clientID string) error {
 	if clusterID == "" {
 		clusterID = "test-cluster"
 	}
-	if clientID == "" {
-		clientID = uuid.Must(uuid.NewRandom()).String()
+	if serviceID == "" {
+		serviceID = "service"
 	}
 	// reset value
 	if m.ReconnectDelay <= 0 {
@@ -204,14 +214,14 @@ func (m *Nats) Connect(serverURL, clusterID, clientID string) error {
 	// init
 	m.serverURL = serverURL
 	m.clusterID = clusterID
-	m.clientID = clientID
+	m.serviceID = m.getServiceID(serviceID)
 	m.reconnectAbort = make(chan bool)
 	m.reconnectTimer = time.NewTimer(m.ReconnectDelay)
 	m.subs = make(map[SubToken]subRecord)
 	// now connect to nats
 	err := m.reconnect()
 	if err != nil {
-		log.WithFields(log.Fields{"clusterID": clusterID, "clientID": clientID, "url": serverURL, "error": err}).Warnf("nats connection failed at connect, retry in %s...", m.ReconnectDelay)
+		log.WithFields(log.Fields{"clusterID": m.clusterID, "clientID": m.clientID, "url": m.serverURL, "error": err}).Warnf("nats connection failed at connect, retry in %s...", m.ReconnectDelay)
 	}
 	// from nats streaming server 0.10.0, it will support client pinging feature, then you don't need this background trhead
 	go m.reconnectServer()
@@ -241,6 +251,18 @@ func (m *Nats) internalClose() error {
 	return nil
 }
 
+func (m *Nats) getServiceID(serviceID string) string {
+	var re = regexp.MustCompile(`(^.+?-).{8}-.{4}-.{4}-.{4}-.{12}$`)
+	ret := re.ReplaceAllString(serviceID, `$1`)
+	ret = strings.Trim(ret, "-")
+	ret = strings.TrimSpace(ret)
+	if ret == "" {
+		ret = serviceID
+	}
+	// return
+	return ret
+}
+
 func (m *Nats) reconnect() error {
 	if m.conn != nil {
 		return nil
@@ -252,6 +274,8 @@ func (m *Nats) reconnect() error {
 	if m.conn != nil {
 		return nil
 	}
+	// create a new clientID
+	m.clientID = fmt.Sprintf("%s-%s", m.serviceID, uuid.Must(uuid.NewRandom()).String())
 	// now connect to nats
 	conn, err := DefaultStan.StanConnect(m.clusterID, m.clientID, stan.NatsURL(m.serverURL),
 		stan.SetConnectionLostHandler(func(_ stan.Conn, reason error) {
