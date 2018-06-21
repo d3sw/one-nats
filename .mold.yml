@@ -4,7 +4,7 @@ build:
     workdir: /build
     environment:
       - PRODUCT_NAME=Deluxe.One.Nats
-      - PRODUCT_VERSION=0.1.6
+      - PRODUCT_VERSION=0.1.7
       - NUGET_HOST=http://nuget.service.owf-dev:5000
       - NUGET_KEY=8d8dc87c-b145-4591-9a2b-e377e0f93aa0
     commands: 
