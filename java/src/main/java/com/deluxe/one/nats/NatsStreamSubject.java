@@ -20,11 +20,11 @@ public class NatsStreamSubject extends NatsAbstractSubject {
 	private Subscription subs;
 	private String durableName;
 
-	public NatsStreamSubject(String clusterId, String natsUrl, String durableName, String name) {
+	public NatsStreamSubject(String clusterId, String natsUrl, String client, String durableName, String name) {
 		super(name);
 		this.fact = new StreamingConnectionFactory();
 		this.fact.setClusterId(clusterId);
-		this.fact.setClientId(UUID.randomUUID().toString());
+		this.fact.setClientId(client + "-" + UUID.randomUUID().toString());
 		this.fact.setNatsUrl(natsUrl);
 		this.durableName = durableName;
 		open();

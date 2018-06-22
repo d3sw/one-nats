@@ -6,7 +6,7 @@ import io.reactivex.disposables.Disposable;
 public class LifeCycleListener {
 	public static void main(String[] args) throws Exception {
 		NatsStreamSubject subject = new NatsStreamSubject("test-cluster",
-				"nats://localhost:4222", "durable", "test:queue");
+				"nats://localhost:4222", "test-client", "durable", "test:queue");
 
 		// Name format is "subject name: queue group name".
 		// If no queue group - the pub/sub mode used, otherwise the queue mode
