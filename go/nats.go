@@ -72,15 +72,15 @@ type INats interface {
 	// Close closes connect to nats server
 	Close() error
 	// QueueSubscribe subscribes to a group channed
-	QueueSubscribe(subject, queue, durable string, cb stan.MsgHandler) (SubToken, error)
+	QueueSubscribe(subject, queue, durable string, cb stan.MsgHandler, opts ...stan.SubscriptionOption) (SubToken, error)
 	// Subscribe subscribes to a channel
-	Subscribe(subject, durable string, cb stan.MsgHandler) (SubToken, error)
+	Subscribe(subject, durable string, cb stan.MsgHandler, opts ...stan.SubscriptionOption) (SubToken, error)
 	// Unsubscribe unscribe to a subscription
 	Unsubscribe(subToken SubToken) error
 	// Closesubscribe close a subscription
 	Closesubscribe(subToken SubToken) error
 	// Publish publishs a message
-	Publish(subject string, data []byte) error
+	Publish(subject string, data []byte, delays ...time.Duration) error
 }
 
 var (
@@ -90,7 +90,7 @@ var (
 	DefaultReconnectDelay = time.Second * 15
 	// DefaultPublishRetryDelays default publish retry delays
 	DefaultPublishRetryDelays = []time.Duration{time.Second * 0, time.Second * 10, time.Second * 20}
-	// SubscribeAckWait default subscriber Ack wait time
+	// DefaultSubscribeAckWait default subscriber Ack wait time
 	DefaultSubscribeAckWait = time.Second * 60
 )
 
@@ -135,13 +135,13 @@ func Close() error {
 }
 
 // QueueSubscribe ...
-func QueueSubscribe(subject, queue, durable string, cb stan.MsgHandler) (SubToken, error) {
-	return getDefaultNats().QueueSubscribe(subject, queue, durable, cb)
+func QueueSubscribe(subject, queue, durable string, cb stan.MsgHandler, opts ...stan.SubscriptionOption) (SubToken, error) {
+	return getDefaultNats().QueueSubscribe(subject, queue, durable, cb, opts...)
 }
 
 // Subscribe ...
-func Subscribe(subject, durable string, cb stan.MsgHandler) (SubToken, error) {
-	return getDefaultNats().Subscribe(subject, durable, cb)
+func Subscribe(subject, durable string, cb stan.MsgHandler, opts ...stan.SubscriptionOption) (SubToken, error) {
+	return getDefaultNats().Subscribe(subject, durable, cb, opts...)
 }
 
 // Unsubscribe unscribe from server
@@ -155,8 +155,8 @@ func Closesubscribe(subToken SubToken) error {
 }
 
 // Publish ...
-func Publish(subj string, data []byte) error {
-	return getDefaultNats().Publish(subj, data)
+func Publish(subj string, data []byte, delays ...time.Duration) error {
+	return getDefaultNats().Publish(subj, data, delays...)
 }
 
 type pubAborts struct {
@@ -188,6 +188,7 @@ type subRecord struct {
 	subject string
 	queue   string
 	durable string
+	opts    []stan.SubscriptionOption
 	cb      stan.MsgHandler
 	sub     stan.Subscription
 }
@@ -292,7 +293,7 @@ func (m *Nats) reconnect() error {
 	log.WithFields(log.Fields{"clusterID": m.clusterID, "clientID": m.clientID, "url": m.serverURL}).Info("nats connection completed")
 	// now setup the subscription
 	for _, item := range m.subs {
-		item.sub, err = m.internalSubscribe(item.subject, item.queue, item.durable, item.cb)
+		item.sub, err = m.internalSubscribe(item.subject, item.queue, item.durable, item.cb, item.opts...)
 	}
 	// return
 	return nil
@@ -333,28 +334,37 @@ func (m *Nats) reconnectServer() {
 	}
 }
 
-func (m *Nats) getSubscriptionOptions(durableName string) []stan.SubscriptionOption {
-	ret := []stan.SubscriptionOption{
-		stan.DurableName(durableName),    // for durable message
-		stan.MaxInflight(m.MaxInflight),  // for processing one message at a time, to avoid timeout
-		stan.AckWait(m.SubscribeAckWait), // for subscribe ack wait time
-	}
-	return ret
-}
-
-func (m *Nats) internalSubscribe(subject, queue, durable string, cb stan.MsgHandler) (stan.Subscription, error) {
-	logger := log.WithFields(log.Fields{"url": m.serverURL, "clusterID": m.clusterID, "clientID": m.clientID, "subject": subject, "queue": queue, "durable": durable})
+func (m *Nats) internalSubscribe(subject, queue, durable string, cb stan.MsgHandler, opts ...stan.SubscriptionOption) (stan.Subscription, error) {
+	logger := log.WithFields(log.Fields{"url": m.serverURL, "clusterID": m.clusterID, "clientID": m.clientID, "subject": subject, "queue": queue})
 	// check connection first
 	if err := m.reconnect(); err != nil {
 		logger.WithField("error", err).Warn("nats subscribe failed at reconnect")
 		return nil, err
 	}
+	// set options
+	var setSubOpts = func(o *stan.SubscriptionOptions) error {
+		// setup default options
+		o.DurableName = durable        // for durable message
+		o.MaxInflight = m.MaxInflight  // for processing one message at a time, to avoid timeout
+		o.AckWait = m.SubscribeAckWait // for subscribe ack wait time
+		// overwrite with new options
+		for _, opt := range opts {
+			opt(o)
+		}
+		logger = logger.WithFields(log.Fields{
+			"durable":     o.DurableName,
+			"maxInflight": o.MaxInflight,
+			"ackWait":     o.AckWait,
+			"manualAcks":  o.ManualAcks,
+		})
+		return nil
+	}
 	// now sub
-	sub, err, opts := stan.Subscription(nil), error(nil), m.getSubscriptionOptions(durable)
+	sub, err := stan.Subscription(nil), error(nil)
 	if queue == "" {
-		sub, err = m.conn.Subscribe(subject, cb, opts...)
+		sub, err = m.conn.Subscribe(subject, cb, setSubOpts)
 	} else {
-		sub, err = m.conn.QueueSubscribe(subject, queue, cb, opts...)
+		sub, err = m.conn.QueueSubscribe(subject, queue, cb, setSubOpts)
 	}
 	if err != nil {
 		logger.WithField("error", err).Warn("nats subscription failed at subscribe")
@@ -366,20 +376,21 @@ func (m *Nats) internalSubscribe(subject, queue, durable string, cb stan.MsgHand
 }
 
 // Subscribe ...
-func (m *Nats) Subscribe(subject, durable string, cb stan.MsgHandler) (SubToken, error) {
-	return QueueSubscribe(subject, "", durable, cb)
+func (m *Nats) Subscribe(subject, durable string, cb stan.MsgHandler, opts ...stan.SubscriptionOption) (SubToken, error) {
+	return QueueSubscribe(subject, "", durable, cb, opts...)
 }
 
 // QueueSubscribe ...
-func (m *Nats) QueueSubscribe(subject, queue, durable string, cb stan.MsgHandler) (SubToken, error) {
+func (m *Nats) QueueSubscribe(subject, queue, durable string, cb stan.MsgHandler, opts ...stan.SubscriptionOption) (SubToken, error) {
 	// subscribe
-	sub, err := m.internalSubscribe(subject, queue, durable, cb)
+	sub, err := m.internalSubscribe(subject, queue, durable, cb, opts...)
 	// keep a copy of subscription
 	subToken := SubToken(uuid.New().String())
 	m.subs[subToken] = subRecord{
 		subject: subject,
 		queue:   queue,
 		durable: durable,
+		opts:    opts,
 		cb:      cb,
 		sub:     sub,
 	}
@@ -501,15 +512,19 @@ func (m *Nats) retryWithDelays(logger *log.Entry, name string, delays []time.Dur
 }
 
 // Publish ...
-func (m *Nats) Publish(subj string, data []byte) error {
+func (m *Nats) Publish(subj string, data []byte, delays ...time.Duration) error {
 	// check
 	if subj == "" {
 		return errors.New("invalid parameter. subject is empty")
 	}
 	// logger
 	logger := log.WithFields(log.Fields{"subject": subj, "data": string(data)})
+	// check delays
+	if delays == nil {
+		delays = m.PublishRetryDelays
+	}
 	// publish now with retries
-	err := m.retryWithDelays(logger, "nats publish", m.PublishRetryDelays, func() error {
+	err := m.retryWithDelays(logger, "nats publish", delays, func() error {
 		return m.internalPublish(subj, data)
 	})
 	if err != nil {

@@ -6,7 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Deluxe.One.Nats" Version="0.1.6" />
+    <ProjectReference Include="..\..\..\Deluxe.One.Nats.csproj" />
   </ItemGroup>
 
 </Project>
