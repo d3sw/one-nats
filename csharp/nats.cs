@@ -1,11 +1,73 @@
+/*************************************************************************
+
+*
+
+ * COPYRIGHT 2018 Deluxe Entertainment Services Group Inc. and its subsidiaries (“Deluxe”)
+
+*  All Rights Reserved.
+
+*
+
+ * NOTICE:  All information contained herein is, and remains
+
+* the property of Deluxe and its suppliers,
+
+* if any.  The intellectual and technical concepts contained
+
+* herein are proprietary to Deluxe and its suppliers and may be covered
+
+ * by U.S. and Foreign Patents, patents in process, and are protected
+
+ * by trade secret or copyright law.   Dissemination of this information or
+
+ * reproduction of this material is strictly forbidden unless prior written
+
+ * permission is obtained from Deluxe.
+
+*/
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
+using Microsoft.Extensions.Logging;
 using STAN.Client;
 
 namespace Deluxe.One.Nats
 {
+    /// <summary>
+    /// Nats connection factory
+    /// </summary>
+    public interface INatsFactory
+    {
+        /// <summary>
+        /// create a new connection
+        /// </summary>
+        /// <param name="clusterID"></param>
+        /// <param name="clientID"></param>
+        /// <param name="options"></param>
+        /// <returns></returns>
+        IStanConnection CreateConnection(string clusterID, string clientID, StanOptions options);
+    }
+
+    /// <summary>
+    /// INatsFactory implementation
+    /// </summary>
+    public class NatsFactory : INatsFactory
+    {
+        /// <summary>
+        /// create a new connection
+        /// </summary>
+        /// <param name="clusterID"></param>
+        /// <param name="clientID"></param>
+        /// <param name="options"></param>
+        /// <returns></returns>
+        public IStanConnection CreateConnection(string clusterID, string clientID, StanOptions options)
+        {
+            return new StanConnectionFactory().CreateConnection(clusterID, clientID, options);
+        }
+    }
+
     public class SubRecord
     {
         public string subject;
@@ -22,8 +84,8 @@ namespace Deluxe.One.Nats
         /// </summary>
         /// <param name="serverURL"></param>
         /// <param name="clusterID"></param>
-        /// <param name="clientID"></param>
-        void Connect(string serverURL, string clusterID, string clientID);
+        /// <param name="serviceID"></param>
+        void Connect(string serverURL, string clusterID, string serviceID);
         /// <summary>
         /// close connection to nats
         /// </summary>
@@ -33,7 +95,15 @@ namespace Deluxe.One.Nats
         /// </summary>
         /// <param name="subject"></param>
         /// <param name="data"></param>
-        void Publish(string subject, byte[] data);
+        /// <param name="delays"></param>
+        void Publish(string subject, byte[] data, TimeSpan[] delays = null);
+        /// <summary>
+        /// publish message to nats
+        /// </summary>
+        /// <param name="subject"></param>
+        /// <param name="msg"></param>
+        /// <param name="delays"></param>
+        void Publish(string subject, string msg, TimeSpan[] delays = null);
         /// <summary>
         /// subscribe to nats server
         /// </summary>
@@ -65,17 +135,25 @@ namespace Deluxe.One.Nats
     };
     public class Nats : INats
     {
+        public int MaxInflight = nats.DefaultMaxInflight;
         public TimeSpan[] PublishRetryDelays = nats.DefaultPublishRetryDelays;
         public TimeSpan ReconnectDelay = nats.DefaultReconnectDelay;
         public TimeSpan SubscribeAckWait = nats.DefaultSubscribeAckWait;
+        public ILogger Logger { get; }
 
         private object _token = new object();
         private STAN.Client.IStanConnection _conn = null;
-        private string _serverURL, _clusterID, _clientID;
+        private string _serverURL, _clusterID, _clientID, _serviceID;
         private AutoResetEvent _reconnectAbort = new AutoResetEvent(false);
         private ManualResetEvent _publishAbort = new ManualResetEvent(false);
         private Dictionary<string, SubRecord> _subs = new Dictionary<string, SubRecord>();
         private Thread _reconnectThread;
+
+
+        public Nats(ILogger logger = null)
+        {
+            Logger = logger ?? nats.DefaultLogger;
+        }
 
         private Exception reconnect()
         {
@@ -87,6 +165,8 @@ namespace Deluxe.One.Nats
             {
                 if (_conn != null)
                     return null;
+                // create a new clientID
+                _clientID = string.Format("{0}-{1}", _serviceID, Guid.NewGuid());
                 // fields
                 var fields = new Dictionary<string, object>{
                     { "clusterID", _clusterID }, {"clientID", _clientID }, {"serverURL", _serverURL},
@@ -99,7 +179,9 @@ namespace Deluxe.One.Nats
                     // reset event
                     _publishAbort.Reset();
                     // reconnect
-                    var conn = new StanConnectionFactory().CreateConnection(_clusterID, _clientID, opts);
+                    var conn = nats.DefaultFactory.CreateConnection(_clusterID, _clientID, opts);
+                    if (conn == null)
+                        throw new ApplicationException(string.Format("nats connection failed, conn==null"));
                     // save conn
                     _conn = conn;
                     // log info
@@ -120,27 +202,27 @@ namespace Deluxe.One.Nats
             // return
             return error;
         }
-        public void Connect(string serverURL, string clusterID, string clientID)
+        public void Connect(string serverURL, string clusterID, string serviceID)
         {
             // reset values
             if (string.IsNullOrEmpty(serverURL))
                 serverURL = "nats://localhost:4222";
             if (string.IsNullOrEmpty(clusterID))
                 clusterID = "test-cluster";
-            if (string.IsNullOrEmpty(clientID))
-                clientID = Guid.NewGuid().ToString();
+            if (string.IsNullOrEmpty(serviceID))
+                serviceID = "service";
             // save settings
             _serverURL = serverURL;
             _clusterID = clusterID;
-            _clientID = clientID;
+            _serviceID = getServiceID(serviceID);
             // now connect to nats
             var error = reconnect();
             if (error != null)
             {
                 var fields = new Dictionary<string, object>{
-                    { "clusterID",clusterID},
-                    { "clientID", clientID },
-                    { "serverURL", serverURL },
+                    { "clusterID", _clusterID},
+                    { "clientID", _clientID },
+                    { "serverURL", _serverURL },
                     { "error", error } };
                 logWarn(fields, "nats connection failed at connect, retry at {0}...", DateTime.Now + ReconnectDelay);
             }
@@ -163,6 +245,13 @@ namespace Deluxe.One.Nats
             // close the 
             internalClose();
             logInfo(null, "nats closed");
+        }
+
+        private string getServiceID(string serviceID) {
+            var ret = Regex.Replace(serviceID, "(^.+?-).{8}-.{4}-.{4}-.{4}-.{12}$", "$1").Trim('-');
+            if (string.IsNullOrWhiteSpace(ret))
+                ret = serviceID;
+            return ret;
         }
 
         private void internalClose()
@@ -233,12 +322,23 @@ namespace Deluxe.One.Nats
             return error;
         }
 
-        public void Publish(string subject, byte[] data)
+        public void Publish(string subject, string msg, TimeSpan[] delays = null)
         {
+            Publish(subject, Encoding.UTF8.GetBytes(msg), delays);
+        }
+        public void Publish(string subject, byte[] data, TimeSpan[] delays = null)
+        {
+            // check value
+            if (string.IsNullOrWhiteSpace(subject))
+                throw new ApplicationException("invalid parameter. subject is empty");
+            // init
             Exception error = null;
             Dictionary<string, object> fields;
+            // reset value
+            if (delays == null)
+                delays = PublishRetryDelays;
             // publish with retries
-            for (int idx = 0, sum = PublishRetryDelays.Length; idx <= sum; idx++)
+            for (int idx = 0, sum = delays.Length; idx <= sum; idx++)
             {
                 error = internalPublish(subject, data);
                 if (error == null)
@@ -246,7 +346,7 @@ namespace Deluxe.One.Nats
                 // break now
                 if (idx >= sum)
                     break;
-                var delay = PublishRetryDelays[idx];
+                var delay = delays[idx];
                 fields = new Dictionary<string, object>{
                     { "error", error },
                     { "delay", delay } };
@@ -275,8 +375,7 @@ namespace Deluxe.One.Nats
         {
             var ret = StanSubscriptionOptions.GetDefaultOptions();
             ret.DurableName = durable;
-            ret.MaxInflight = 1;
-            ret.DeliverAllAvailable();
+            ret.MaxInflight = 2048;
             // return
             return ret;
         }
@@ -313,9 +412,14 @@ namespace Deluxe.One.Nats
                 error = ex;
             }
             if (error != null)
+            {
+                fields["error"] = error;
                 logWarn(fields, "nats subscribe failed");
+            }
             else
+            {
                 logInfo(fields, "nats subscribe completed");
+            }
             // return 
             return error;
         }
@@ -436,16 +540,16 @@ namespace Deluxe.One.Nats
 
         private void logInfo(Dictionary<string, object> fields, string format, params object[] args)
         {
-            Console.WriteLine(getLogText("info", fields, format, args));
+            Logger.LogInformation(getLogText("info", fields, format, args));
         }
         private void logWarn(Dictionary<string, object> fields, string format, params object[] args)
         {
-            Console.WriteLine(getLogText("warn", fields, format, args));
+            Logger.LogWarning(getLogText("warn", fields, format, args));
         }
 
         private void logError(Dictionary<string, object> fields, string format, params object[] args)
         {
-            Console.WriteLine(getLogText("error", fields, format, args));
+            Logger.LogError(getLogText("error", fields, format, args));
         }
 
         private void reconnectServer(object data)
@@ -488,41 +592,132 @@ namespace Deluxe.One.Nats
 
     public static class nats
     {
+        public static int DefaultMaxInflight = 1;
+        /// <summary>
+        /// default subscribe ack wait time
+        /// </summary>
         public static TimeSpan DefaultSubscribeAckWait = TimeSpan.FromSeconds(60);
+        /// <summary>
+        /// default reconnect delay time
+        /// </summary>
         public static TimeSpan DefaultReconnectDelay = TimeSpan.FromSeconds(15);
+        /// <summary>
+        /// default publish retry delay time
+        /// </summary>
         public static TimeSpan[] DefaultPublishRetryDelays = new TimeSpan[] { TimeSpan.FromSeconds(0), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(20) };
-        public static INats Default = new Nats()
+        /// <summary>
+        /// default nats connection factory
+        /// </summary>
+        public static INatsFactory DefaultFactory = new NatsFactory();
+        /// <summary>
+        /// Default logger
+        /// </summary>
+        public static ILogger DefaultLogger = new LoggerFactory().AddConsole().CreateLogger<Nats>();
+        /// <summary>
+        /// default nats object
+        /// </summary>
+        private static object _defaultToken = new object();
+        private static INats _default = null;
+        public static INats Default
         {
-            ReconnectDelay = DefaultReconnectDelay,
-            PublishRetryDelays = DefaultPublishRetryDelays,
-            SubscribeAckWait = DefaultSubscribeAckWait,
-        };
-        public static void Connect(string serverURL, string clusterID, string clientID)
-        {
-            Default.Connect(serverURL, clusterID, clientID);
+            get
+            {
+                if (_default == null)
+                {
+                    lock (_defaultToken)
+                    {
+                        if (_default == null)
+                            _default = new Nats(DefaultLogger)
+                            {
+                                MaxInflight = DefaultMaxInflight,
+                                PublishRetryDelays = DefaultPublishRetryDelays,
+                                ReconnectDelay = DefaultReconnectDelay,
+                                SubscribeAckWait = DefaultSubscribeAckWait,
+                            };
+                    }
+                }
+                return _default;
+            }
+            set
+            {
+                lock (_defaultToken)
+                    _default = value;
+            }
         }
+
+        /// <summary>
+        /// Connect to nats server
+        /// </summary>
+        /// <param name="serverURL"></param>
+        /// <param name="clusterID"></param>
+        /// <param name="serviceID"></param>
+        public static void Connect(string serverURL, string clusterID, string serviceID)
+        {
+            Default.Connect(serverURL, clusterID, serviceID);
+        }
+        /// <summary>
+        /// close the connection
+        /// </summary>
         public static void Close()
         {
             Default.Close();
+            Default = null;
         }
-        public static void Publish(string subject, byte[] data)
+        /// <summary>
+        /// publish message to server with bytes
+        /// </summary>
+        /// <param name="subject"></param>
+        /// <param name="data"></param>
+        /// <param name="delays"></param>
+        public static void Publish(string subject, byte[] data, TimeSpan[] delays = null)
         {
-            Default.Publish(subject, data);
+            Default.Publish(subject, data, delays);
         }
+        /// <summary>
+        /// publish message to server with string
+        /// </summary>
+        /// <param name="subject"></param>
+        /// <param name="msg"></param>
+        /// <param name="delays"></param>
+        public static void Publish(string subject, string msg, TimeSpan[] delays = null)
+        {
+            Default.Publish(subject, msg, delays);
+        }
+        /// <summary>
+        /// subscribe to a channel
+        /// </summary>
+        /// <param name="subject"></param>
+        /// <param name="durable"></param>
+        /// <param name="cb"></param>
+        /// <returns></returns>
         public static string Subscribe(string subject, string durable, EventHandler<StanMsgHandlerArgs> cb)
         {
             return Default.Subscribe(subject, durable, cb);
         }
-
+        /// <summary>
+        /// queue subscribe to a channel
+        /// </summary>
+        /// <param name="subject"></param>
+        /// <param name="queue"></param>
+        /// <param name="durable"></param>
+        /// <param name="cb"></param>
+        /// <returns></returns>
         public static string QueueSubscribe(string subject, string queue, string durable, EventHandler<StanMsgHandlerArgs> cb)
         {
             return Default.QueueSubscribe(subject, queue, durable, cb);
         }
-
+        /// <summary>
+        /// unsubscribe to a channel
+        /// </summary>
+        /// <param name="guid"></param>
         public static void Unscribe(string guid)
         {
             Default.Unscribe(guid);
         }
+        /// <summary>
+        /// close a subscription
+        /// </summary>
+        /// <param name="guid"></param>
         public static void Closesubscribe(string guid)
         {
             Default.Closesubscribe(guid);

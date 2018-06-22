@@ -34,22 +34,30 @@ namespace ConsoleApp1
 {
     class MyService
     {
-        public void Startup()
+        private Thread _thread = null;
+        private ManualResetEvent _abort = new ManualResetEvent(false);
+        public void Start()
         {
             nats.DefaultPublishRetryDelays = new TimeSpan[] { TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(60) };
-            nats.Connect("nats://localhost:4222", "test-cluster", "sub_client");
-            // start the subscriber
-            nats.QueueSubscribe("foo_subject", "queue", "durable", onReceived);
+            nats.Connect("nats://localhost:4222", "test-cluster", "pub_client");
+            // start the process thread
+            _thread = new Thread(onThread);
+            _thread.Start();
         }
 
-        public void Shutdown()
+        private void onThread() {
+            var idx = 0;
+            while(!_abort.WaitOne(TimeSpan.FromSeconds(5))) {
+                var msg = string.Format("message #{0}", ++idx);
+                nats.Publish("foo_subject", System.Text.Encoding.UTF8.GetBytes(msg));
+            }
+        }
+
+        public void Stop()
         {
+            _abort.Set();
+            _thread.Join();
             nats.Close();
-        }
-
-        private void onReceived(object sender, StanMsgHandlerArgs args)
-        {
-            Console.WriteLine("Received seq #{0}: {1}", args.Message.Sequence, System.Text.Encoding.UTF8.GetString(args.Message.Data));
         }
     }
     class Program
@@ -59,12 +67,12 @@ namespace ConsoleApp1
             // init
             var service = new MyService();
             // start
-            service.Startup();
+            service.Start();
             // wait for exit
             var ev = new AutoResetEvent(false);
             Console.CancelKeyPress += (sender, e) =>
             {
-                service.Shutdown();
+                service.Stop();
                 // return
                 e.Cancel = true;
                 ev.Set();
