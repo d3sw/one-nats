@@ -11,7 +11,7 @@ public class RepeatablePublisher {
 
 		// For the publisher case, we do not care durable name
 		NatsStreamSubject subject = new NatsStreamSubject("test-cluster",
-				"nats://localhost:4222", "test-client", null, "test");
+				"nats://localhost:4222", "test-service", null, "test");
 
 		AtomicInteger counter = new AtomicInteger();
 		Executors.newScheduledThreadPool(1).scheduleAtFixedRate(() -> {
