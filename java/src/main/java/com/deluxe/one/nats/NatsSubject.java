@@ -18,6 +18,7 @@ public class NatsSubject extends NatsAbstractSubject {
 
 	public NatsSubject(ConnectionFactory factory, String name) {
 		super(name);
+
 		this.fact = factory;
 		open();
 	}
