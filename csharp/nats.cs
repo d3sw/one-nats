@@ -72,7 +72,7 @@ namespace Deluxe.One.Nats
     {
         public string subject;
         public string queue;
-        public string durable;
+        public StanSubscriptionOptions options;
         public EventHandler<StanMsgHandlerArgs> cb;
         public IStanSubscription sub;
     };
@@ -113,6 +113,14 @@ namespace Deluxe.One.Nats
         /// <returns>guid to subscription</returns>
         string Subscribe(string subject, string durable, EventHandler<StanMsgHandlerArgs> cb);
         /// <summary>
+        /// subscribe queue with options
+        /// </summary>
+        /// <param name="subject"></param>
+        /// <param name="options"></param>
+        /// <param name="cb"></param>
+        /// <returns></returns>
+        string Subscribe(string subject, StanSubscriptionOptions options, EventHandler<StanMsgHandlerArgs> cb);
+        /// <summary>
         /// queue subscription to nats server 
         /// </summary>
         /// <param name="subject"></param>
@@ -121,6 +129,15 @@ namespace Deluxe.One.Nats
         /// <param name="cb"></param>
         /// <returns>guid to subscription</returns>
         string QueueSubscribe(string subject, string queue, string durable, EventHandler<StanMsgHandlerArgs> cb);
+        /// <summary>
+        /// queue subscribe queue with options
+        /// </summary>
+        /// <param name="subject"></param>
+        /// <param name="queue"></param>
+        /// <param name="options"></param>
+        /// <param name="cb"></param>
+        /// <returns></returns>
+        string QueueSubscribe(string subject, string queue, StanSubscriptionOptions options, EventHandler<StanMsgHandlerArgs> cb);
         /// <summary>
         /// unscribe to the nats server
         /// </summary>
@@ -190,7 +207,7 @@ namespace Deluxe.One.Nats
                     foreach (var item in _subs.Values)
                     {
                         IStanSubscription sub = null;
-                        internalSubscribe(item.subject, item.queue, item.durable, item.cb, out sub);
+                        internalSubscribe(item.subject, item.queue, item.options, item.cb, out sub);
                         item.sub = sub;
                     }
                 }
@@ -267,8 +284,7 @@ namespace Deluxe.One.Nats
                     {
                         var fields = new Dictionary<string, object> {
                             { "subject", item.subject },
-                            { "queue", item.queue },
-                            {"durable", item.durable } };
+                            { "queue", item.queue } };
                         try
                         {
                             item.sub.Close();
@@ -380,7 +396,7 @@ namespace Deluxe.One.Nats
             return ret;
         }
 
-        private Exception internalSubscribe(string subject, string queue, string durable, EventHandler<StanMsgHandlerArgs> cb, out IStanSubscription sub)
+        private Exception internalSubscribe(string subject, string queue, StanSubscriptionOptions options, EventHandler < StanMsgHandlerArgs> cb, out IStanSubscription sub)
         {
             sub = null;
             var fields = new Dictionary<string, object> {
@@ -389,7 +405,10 @@ namespace Deluxe.One.Nats
                 {"clientID", _clientID },
                 {"subject", subject },
                 {"queue", queue },
-                {"durable", durable },
+                {"durable", options.DurableName },
+                {"maxInflight", options.MaxInflight},
+                {"AckWait", options.AckWait},
+                {"ManualAcks", options.ManualAcks},
             };
             // check connection first
             var error = reconnect();
@@ -401,11 +420,10 @@ namespace Deluxe.One.Nats
             // now subscribe
             try
             {
-                var opts = getSubscriptionOptions(durable);
                 if (string.IsNullOrEmpty(queue))
-                    sub = _conn.Subscribe(subject, opts, cb);
+                    sub = _conn.Subscribe(subject, options, cb);
                 else
-                    sub = _conn.Subscribe(subject, queue, opts, cb);
+                    sub = _conn.Subscribe(subject, queue, options, cb);
             }
             catch (Exception ex)
             {
@@ -428,17 +446,27 @@ namespace Deluxe.One.Nats
         {
             return QueueSubscribe(subject, "", durable, cb);
         }
+        public string Subscribe(string subject, StanSubscriptionOptions options, EventHandler<StanMsgHandlerArgs> cb)
+        {
+            return QueueSubscribe(subject, "", options, cb);
+        }
         public string QueueSubscribe(string subject, string queue, string durable, EventHandler<StanMsgHandlerArgs> cb)
+        {
+            var options = StanSubscriptionOptions.GetDefaultOptions();
+            options.DurableName = durable;
+            return QueueSubscribe(subject, queue, options, cb);
+        }
+        public string QueueSubscribe(string subject, string queue, StanSubscriptionOptions options, EventHandler<StanMsgHandlerArgs> cb)
         {
             IStanSubscription sub = null;
             string guid = Guid.NewGuid().ToString();
-            var error = internalSubscribe(subject, queue, durable, cb, out sub);
+            var error = internalSubscribe(subject, queue, options, cb, out sub);
             // keep a copy of subscription info
             _subs[guid] = new SubRecord
             {
                 subject = subject,
                 queue = queue,
-                durable = durable,
+                options = options,
                 cb = cb,
                 sub = sub,
             };
@@ -695,6 +723,17 @@ namespace Deluxe.One.Nats
             return Default.Subscribe(subject, durable, cb);
         }
         /// <summary>
+        /// subscribe to a channel with options
+        /// </summary>
+        /// <param name="subject"></param>
+        /// <param name="options"></param>
+        /// <param name="cb"></param>
+        /// <returns></returns>
+        public static string Subscribe(string subject, StanSubscriptionOptions options, EventHandler<StanMsgHandlerArgs> cb)
+        {
+            return Default.Subscribe(subject, options, cb);
+        }
+        /// <summary>
         /// queue subscribe to a channel
         /// </summary>
         /// <param name="subject"></param>
@@ -705,6 +744,18 @@ namespace Deluxe.One.Nats
         public static string QueueSubscribe(string subject, string queue, string durable, EventHandler<StanMsgHandlerArgs> cb)
         {
             return Default.QueueSubscribe(subject, queue, durable, cb);
+        }
+        /// <summary>
+        /// subscribe to a channel with options
+        /// </summary>
+        /// <param name="subject"></param>
+        /// <param name="queue"></param>
+        /// <param name="options"></param>
+        /// <param name="cb"></param>
+        /// <returns></returns>
+        public static string QueueSubscribe(string subject, string queue, StanSubscriptionOptions options, EventHandler<StanMsgHandlerArgs> cb)
+        {
+            return Default.QueueSubscribe(subject, queue, options, cb);
         }
         /// <summary>
         /// unsubscribe to a channel

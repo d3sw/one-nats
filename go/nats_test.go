@@ -110,12 +110,20 @@ func (m *MockNats) Close() error {
 	args := m.Called()
 	return args.Error(0)
 }
-func (m *MockNats) QueueSubscribe(subject, queue, durable string, cb stan.MsgHandler) (SubToken, error) {
-	args := m.Called(subject, queue, durable, cb)
+func (m *MockNats) QueueSubscribe(subject, queue, durable string, cb stan.MsgHandler, opts ...stan.SubscriptionOption) (SubToken, error) {
+	a := []interface{}{subject, queue, durable, cb}
+	for _, o := range opts {
+		a = append(a, o)
+	}
+	args := m.Called(a...)
 	return args.Get(0).(SubToken), args.Error(1)
 }
-func (m *MockNats) Subscribe(subject, durable string, cb stan.MsgHandler) (SubToken, error) {
-	args := m.Called(subject, durable, cb)
+func (m *MockNats) Subscribe(subject, durable string, cb stan.MsgHandler, opts ...stan.SubscriptionOption) (SubToken, error) {
+	a := []interface{}{subject, durable, cb}
+	for _, o := range opts {
+		a = append(a, o)
+	}
+	args := m.Called(a...)
 	return args.Get(0).(SubToken), args.Error(1)
 }
 func (m *MockNats) Unsubscribe(subToken SubToken) error {
@@ -126,7 +134,7 @@ func (m *MockNats) Closesubscribe(subToken SubToken) error {
 	args := m.Called(subToken)
 	return args.Error(0)
 }
-func (m *MockNats) Publish(subject string, data []byte) error {
+func (m *MockNats) Publish(subject string, data []byte, delay ...time.Duration) error {
 	args := m.Called(subject, data)
 	return args.Error(0)
 }
