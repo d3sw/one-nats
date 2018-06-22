@@ -35,7 +35,6 @@ import (
 	"os"
 	"strings"
 
-	nats "github.com/nats-io/go-nats"
 	"github.com/nats-io/go-nats-streaming"
 	log "github.com/sirupsen/logrus"
 )
@@ -129,49 +128,36 @@ func main() {
 			if err != nil {
 				log.WithFields(log.Fields{"sub": sub, "error": err}).Error("unscribe failed")
 			} else {
-				log.WithFields(log.Fields{"sub": sub}).Info("unscribe completed")
+				log.WithFields(log.Fields{"clientID": sub.ClientID, "queueName": sub.QueueName}).Info("unscribe completed")
 			}
 		}
 	}
 }
 
 func unscribeOfflineClient(server string, clusterID string, channel string, item Subscription) error {
-	if item.ClientID != "" {
-		return unscribeOfflineQueueClient(server, clusterID, channel, item)
-	}
-
-	serverURL := fmt.Sprintf("nats://%s:4222", server)
-	conn, err := nats.Connect(serverURL)
-	if err != nil {
-		return err
-	}
-	sub, err := conn.QueueSubscribe(channel, item.QueueName, func(msg *nats.Msg) {})
-	if err == nil {
-		sub.Unsubscribe()
-	}
-	conn.Close()
-	return nil
-}
-
-func unscribeOfflineQueueClient(server string, clusterID string, channel string, item Subscription) error {
 	// parse queue => durable:queue
-	durable, queue, parts := "", item.QueueName, strings.Split(item.QueueName, ":")
+	durable, queue, clientID, parts := "", item.QueueName, item.ClientID, strings.Split(item.QueueName, ":")
 	if len(parts) >= 2 {
 		durable = parts[0]
 		queue = parts[1]
 	}
+	if clientID == "" {
+		clientID = "nats-cleanup-channel"
+	}
 	// run now
 	serverURL := fmt.Sprintf("nats://%s:4222", server)
-	conn, err := stan.Connect(clusterID, item.ClientID, stan.NatsURL(serverURL))
+	conn, err := stan.Connect(clusterID, clientID, stan.NatsURL(serverURL))
 	if err != nil {
 		return err
 	}
 	// loop now
 	sub, err := conn.QueueSubscribe(channel, queue, func(msg *stan.Msg) {}, stan.DurableName(durable))
 	if err == nil {
-		sub.Unsubscribe()
+		err = sub.Unsubscribe()
 	}
-	return conn.Close()
+	conn.Close()
+	// return
+	return err
 }
 
 func getJSON(url string, object interface{}) error {
