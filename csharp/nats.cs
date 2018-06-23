@@ -172,6 +172,11 @@ namespace Deluxe.One.Nats
             Logger = logger ?? nats.DefaultLogger;
         }
 
+        private string getOneNatsVersion()
+        {
+            return typeof(Nats).Assembly.GetName().Version.ToString();
+        }
+
         private Exception reconnect()
         {
             if (_conn != null)
@@ -185,9 +190,7 @@ namespace Deluxe.One.Nats
                 // create a new clientID
                 _clientID = string.Format("{0}-{1}", _serviceID, Guid.NewGuid());
                 // fields
-                var fields = new Dictionary<string, object>{
-                    { "clusterID", _clusterID }, {"clientID", _clientID }, {"serverURL", _serverURL},
-                };
+                var fields = getConnLogFields();
                 // now create a new connect
                 var opts = StanOptions.GetDefaultOptions();
                 opts.NatsURL = _serverURL;
@@ -236,11 +239,8 @@ namespace Deluxe.One.Nats
             var error = reconnect();
             if (error != null)
             {
-                var fields = new Dictionary<string, object>{
-                    { "clusterID", _clusterID},
-                    { "clientID", _clientID },
-                    { "serverURL", _serverURL },
-                    { "error", error } };
+                var fields = getConnLogFields();
+                fields["error"] = error;
                 logWarn(fields, "nats connection failed at connect, retry at {0}...", DateTime.Now + ReconnectDelay);
             }
             // from nats streaming server 0.10.0, it will support client pinging feature, then you don't need this background trhead
@@ -264,7 +264,8 @@ namespace Deluxe.One.Nats
             logInfo(null, "nats closed");
         }
 
-        private string getServiceID(string serviceID) {
+        private string getServiceID(string serviceID)
+        {
             var ret = Regex.Replace(serviceID, "(^.+?-).{8}-.{4}-.{4}-.{4}-.{12}$", "$1").Trim('-');
             if (string.IsNullOrWhiteSpace(ret))
                 ret = serviceID;
@@ -282,9 +283,7 @@ namespace Deluxe.One.Nats
                     var item = pair.Value;
                     if (item.sub != null)
                     {
-                        var fields = new Dictionary<string, object> {
-                            { "subject", item.subject },
-                            { "queue", item.queue } };
+                        var fields = getSubLogFields(item.subject, item.queue, item.options);
                         try
                         {
                             item.sub.Close();
@@ -301,7 +300,7 @@ namespace Deluxe.One.Nats
                         }
                         else
                         {
-                            logInfo(fields, "nats subscription close completed");
+                            logInfo(fields, "nats subscription closed");
                         }
                     }
                 }
@@ -310,10 +309,7 @@ namespace Deluxe.One.Nats
                 {
                     try { _conn.Close(); } catch { }
                     _conn = null;
-                    var fields = new Dictionary<string, object> {
-                        { "serverURL",_serverURL },
-                        { "clusterID", _clusterID },
-                        { "clientID ", _clientID } };
+                    var fields = getConnLogFields();
                     logInfo(fields, "nats connection closed");
                 }
             }
@@ -372,9 +368,7 @@ namespace Deluxe.One.Nats
                     break;
             }
             // check error
-            fields = new Dictionary<string, object> {
-                    { "subject", subject },
-                    { "data", System.Text.Encoding.UTF8.GetString(data) } };
+            fields = new Dictionary<string, object> { { "subject", subject }, { "data", System.Text.Encoding.UTF8.GetString(data) } };
             if (error != null)
             {
                 fields["error"] = error;
@@ -387,34 +381,42 @@ namespace Deluxe.One.Nats
             }
         }
 
-        private StanSubscriptionOptions getSubscriptionOptions(string durable)
+        private Dictionary<string, object> getConnLogFields()
         {
-            var ret = StanSubscriptionOptions.GetDefaultOptions();
-            ret.DurableName = durable;
-            ret.MaxInflight = 2048;
-            // return
-            return ret;
+            return new Dictionary<string, object> {
+                {"natsURL", _serverURL } ,
+                {"clusterID", _clusterID },
+                {"serviceID", _serviceID },
+                {"clientID", _clientID },
+                {"onenatsVersion", getOneNatsVersion()},
+            };
         }
 
-        private Exception internalSubscribe(string subject, string queue, StanSubscriptionOptions options, EventHandler < StanMsgHandlerArgs> cb, out IStanSubscription sub)
+        private Dictionary<string, object> getSubLogFields(string subject, string queue, StanSubscriptionOptions options)
+        {
+            var fields = getConnLogFields();
+            fields["subject"] = subject;
+            fields["queue"] = queue;
+            if (options != null)
+            {
+                fields["durable"] = options.DurableName;
+                fields["maxInflight"] = options.MaxInflight;
+                fields["AckWait"] = options.AckWait;
+                fields["ManualAcks"] = options.ManualAcks;
+            }
+            return fields;
+        }
+
+        private Exception internalSubscribe(string subject, string queue, StanSubscriptionOptions options, EventHandler<StanMsgHandlerArgs> cb, out IStanSubscription sub)
         {
             sub = null;
-            var fields = new Dictionary<string, object> {
-                { "serverURL", _serverURL } ,
-                {"clusterID", _clusterID },
-                {"clientID", _clientID },
-                {"subject", subject },
-                {"queue", queue },
-                {"durable", options.DurableName },
-                {"maxInflight", options.MaxInflight},
-                {"AckWait", options.AckWait},
-                {"ManualAcks", options.ManualAcks},
-            };
+            var fields = getSubLogFields(subject, queue, options);
             // check connection first
             var error = reconnect();
             if (error != null)
             {
-                logWarn(fields, "nats subscribe failed at reconnect");
+                fields["error"] = error;
+                logWarn(fields, "nats subscription failed at reconnect");
                 return error;
             }
             // now subscribe
@@ -432,11 +434,11 @@ namespace Deluxe.One.Nats
             if (error != null)
             {
                 fields["error"] = error;
-                logWarn(fields, "nats subscribe failed");
+                logWarn(fields, "nats subscription failed");
             }
             else
             {
-                logInfo(fields, "nats subscribe completed");
+                logInfo(fields, "nats subscription completed");
             }
             // return 
             return error;
@@ -511,11 +513,11 @@ namespace Deluxe.One.Nats
             if (error != null)
             {
                 fields["error"] = error;
-                logWarn(fields, "nats unsubscribe failed");
+                logWarn(fields, "nats unsubscription failed");
             }
             else
             {
-                logInfo(fields, "nats unsubscribe completed");
+                logInfo(fields, "nats unsubscription completed");
             }
         }
         public void Closesubscribe(string guid)
@@ -539,11 +541,11 @@ namespace Deluxe.One.Nats
             if (error != null)
             {
                 fields["error"] = error;
-                logWarn(fields, "nats closesubscribe failed");
+                logWarn(fields, "nats closesubscription failed");
             }
             else
             {
-                logInfo(fields, "nats closesubscribe completed");
+                logInfo(fields, "nats closesubscription completed");
             }
         }
         private string getLogText(string level, Dictionary<string, object> fields, string format, params object[] args)
