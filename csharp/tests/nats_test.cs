@@ -197,7 +197,7 @@ namespace tests
         [TestMethod]
         public void Test_Subscribe_Error()
         {
-            var errmsg = "nats subscribe error";
+            var errmsg = "nats subscription error";
             var logger = new TextLogger();
             // mock
             var mockConn = new Mock<IStanConnection>();
@@ -235,13 +235,13 @@ namespace tests
             nats.Subscribe("subject", "durable", (e, args) => { });
             nats.Close();
             // verify
-            StringAssert.Contains(logger.ToString(), "nats subscribe completed");
+            StringAssert.Contains(logger.ToString(), "nats subscription completed");
         }
 
         [TestMethod]
         public void Test_QueueSubscribe_Error()
         {
-            var errmsg = "nats subscribe error";
+            var errmsg = "nats subscription error";
             var logger = new TextLogger();
             // mock
             var mockConn = new Mock<IStanConnection>();
@@ -279,7 +279,7 @@ namespace tests
             nats.QueueSubscribe("subject", "queue", "durable", (e, args) => { });
             nats.Close();
             // verify
-            StringAssert.Contains(logger.ToString(), "nats subscribe completed");
+            StringAssert.Contains(logger.ToString(), "nats subscription completed");
         }
     }
 }

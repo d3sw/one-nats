@@ -40,6 +40,9 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// Version is the one-nats client
+const Version = "0.1.8"
+
 // SubToken subscription token
 type SubToken string
 
@@ -193,6 +196,10 @@ type subRecord struct {
 	sub     stan.Subscription
 }
 
+func (m *Nats) getConnLogger() *log.Entry {
+	return log.WithFields(log.Fields{"natsURL": m.serverURL, "clusterID": m.clusterID, "serviceID": m.serviceID, "clientID": m.clientID, "onenatsVersion": Version})
+}
+
 // Connect ...
 func (m *Nats) Connect(serverURL, clusterID, serviceID string) error {
 	// reset values
@@ -222,7 +229,7 @@ func (m *Nats) Connect(serverURL, clusterID, serviceID string) error {
 	// now connect to nats
 	err := m.reconnect()
 	if err != nil {
-		log.WithFields(log.Fields{"clusterID": m.clusterID, "clientID": m.clientID, "url": m.serverURL, "error": err}).Warnf("nats connection failed at connect, retry in %s...", m.ReconnectDelay)
+		m.getConnLogger().WithField("error", err).Warnf("nats connection failed at connect, retry in %s...", m.ReconnectDelay)
 	}
 	// from nats streaming server 0.10.0, it will support client pinging feature, then you don't need this background trhead
 	go m.reconnectServer()
@@ -233,12 +240,14 @@ func (m *Nats) Connect(serverURL, clusterID, serviceID string) error {
 func (m *Nats) internalClose() error {
 	m.Lock()
 	defer m.Unlock()
+	// logger
+	logger := m.getConnLogger()
 	// close subscription
 	for _, item := range m.subs {
 		if item.sub != nil {
 			item.sub.Close()
 			item.sub = nil
-			log.WithFields(log.Fields{"subject": item.subject, "queue": item.queue, "durable": item.durable}).Info("nats subscription closed")
+			logger.WithFields(log.Fields{"subject": item.subject, "queue": item.queue, "durable": item.durable}).Info("nats subscription closed")
 		}
 	}
 	// close that nats connection
@@ -246,7 +255,7 @@ func (m *Nats) internalClose() error {
 		// close
 		m.conn.Close()
 		m.conn = nil
-		log.WithFields(log.Fields{"server": m.serverURL, "clusterID": m.clusterID, "clientID": m.clientID}).Info("nats connection closed")
+		logger.Info("nats connection closed")
 	}
 	// return
 	return nil
@@ -277,10 +286,11 @@ func (m *Nats) reconnect() error {
 	}
 	// create a new clientID
 	m.clientID = fmt.Sprintf("%s-%s", m.serviceID, uuid.Must(uuid.NewRandom()).String())
+	logger := m.getConnLogger()
 	// now connect to nats
 	conn, err := DefaultStan.StanConnect(m.clusterID, m.clientID, stan.NatsURL(m.serverURL),
 		stan.SetConnectionLostHandler(func(_ stan.Conn, reason error) {
-			log.WithFields(log.Fields{"clusterID": m.clusterID, "clientID": m.clientID, "url": m.serverURL, "reason": reason}).Error("nats connection lost")
+			logger.WithField("reason", reason).Error("nats connection lost")
 			// close the connection
 			m.internalClose()
 		}))
@@ -290,7 +300,7 @@ func (m *Nats) reconnect() error {
 	}
 	m.conn = conn
 	// now create a new object
-	log.WithFields(log.Fields{"clusterID": m.clusterID, "clientID": m.clientID, "url": m.serverURL}).Info("nats connection completed")
+	logger.Info("nats connection completed")
 	// now setup the subscription
 	for _, item := range m.subs {
 		item.sub, err = m.internalSubscribe(item.subject, item.queue, item.durable, item.cb, item.opts...)
@@ -305,7 +315,7 @@ func (m *Nats) resetReconnectTimer() {
 
 func (m *Nats) reconnectServer() {
 	retries := 0
-	logger := log.WithFields(log.Fields{"url": m.serverURL, "clusterID": m.clusterID, "clientID": m.clientID})
+	logger := m.getConnLogger()
 	for {
 		select {
 		case <-m.reconnectTimer.C:
@@ -335,10 +345,10 @@ func (m *Nats) reconnectServer() {
 }
 
 func (m *Nats) internalSubscribe(subject, queue, durable string, cb stan.MsgHandler, opts ...stan.SubscriptionOption) (stan.Subscription, error) {
-	logger := log.WithFields(log.Fields{"url": m.serverURL, "clusterID": m.clusterID, "clientID": m.clientID, "subject": subject, "queue": queue})
+	logger := m.getConnLogger().WithFields(log.Fields{"subject": subject, "queue": queue})
 	// check connection first
 	if err := m.reconnect(); err != nil {
-		logger.WithField("error", err).Warn("nats subscribe failed at reconnect")
+		logger.WithField("error", err).Warn("nats subscription failed at reconnect")
 		return nil, err
 	}
 	// set options
@@ -370,7 +380,7 @@ func (m *Nats) internalSubscribe(subject, queue, durable string, cb stan.MsgHand
 		logger.WithField("error", err).Warn("nats subscription failed at subscribe")
 		return sub, err
 	}
-	logger.Info("nats subscribe completed")
+	logger.Info("nats subscription completed")
 	// return
 	return sub, err
 }
@@ -430,9 +440,9 @@ func (m *Nats) Unsubscribe(subToken SubToken) error {
 	err = subRec.sub.Unsubscribe()
 	// log
 	if err != nil {
-		logger.WithFields(log.Fields{"error": err}).Warn("nats unsubscribe failed")
+		logger.WithFields(log.Fields{"error": err}).Warn("nats unsubscription failed")
 	} else {
-		logger.Info("nats unsubscribe completed")
+		logger.Info("nats unsubscription completed")
 	}
 	// return
 	return err
@@ -451,9 +461,9 @@ func (m *Nats) Closesubscribe(subToken SubToken) error {
 	}
 	err = subRec.sub.Close()
 	if err != nil {
-		logger.WithFields(log.Fields{"error": err}).Warn("nats closesubscribe failed")
+		logger.WithFields(log.Fields{"error": err}).Warn("nats closesubscription failed")
 	} else {
-		logger.Info("nats closesubscribe completed")
+		logger.Info("nats closesubscription completed")
 	}
 	// return
 	return err

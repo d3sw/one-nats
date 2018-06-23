@@ -41,7 +41,8 @@ namespace ConsoleApp1
             // customize the default values
             nats.DefaultPublishRetryDelays = new TimeSpan[] { TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(60) };
             // connect
-            nats.Connect("nats://localhost:4222", "test-cluster", "pub_client");
+            //nats.Connect("nats://localhost:4222", "test-cluster", "pub_client");
+            nats.Connect("nats://events.service.owf-dev:4222", "events-streaming", "pub_client");
             // start the process thread
             _thread = new Thread(onThread);
             _thread.Start();

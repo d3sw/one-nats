@@ -280,7 +280,7 @@ func Test_Subscribe_OK(t *testing.T) {
 	Subscribe("foo", "durable", func(msg *stan.Msg) {})
 	Close()
 	// assert
-	assert.Contains(t, logs.String(), "nats subscribe completed")
+	assert.Contains(t, logs.String(), "nats subscription completed")
 }
 
 func Test_Publish_Subject_Empty(t *testing.T) {
@@ -375,7 +375,7 @@ func Test_Unsubscribe_Error(t *testing.T) {
 	Unsubscribe(sub)
 	Close()
 	// assert
-	assert.Contains(t, logs.String(), "nats subscribe completed")
+	assert.Contains(t, logs.String(), "nats subscription completed")
 	assert.Contains(t, logs.String(), errmsg)
 }
 
@@ -415,8 +415,8 @@ func Test_Unsubscribe_OK(t *testing.T) {
 	Unsubscribe(sub)
 	Close()
 	// assert
-	assert.Contains(t, logs.String(), "nats subscribe completed")
-	assert.Contains(t, logs.String(), "nats unsubscribe completed")
+	assert.Contains(t, logs.String(), "nats subscription completed")
+	assert.Contains(t, logs.String(), "nats unsubscription completed")
 }
 func Test_Closesubscribe_Error(t *testing.T) {
 	logs := setupLogs()
@@ -435,7 +435,7 @@ func Test_Closesubscribe_Error(t *testing.T) {
 	Closesubscribe(sub)
 	Close()
 	// assert
-	assert.Contains(t, logs.String(), "nats subscribe completed")
+	assert.Contains(t, logs.String(), "nats subscription completed")
 	assert.Contains(t, logs.String(), errmsg)
 }
 func Test_Closesubscribe_OK(t *testing.T) {
@@ -454,8 +454,8 @@ func Test_Closesubscribe_OK(t *testing.T) {
 	Closesubscribe(sub)
 	Close()
 	// assert
-	assert.Contains(t, logs.String(), "nats subscribe completed")
-	assert.Contains(t, logs.String(), "nats closesubscribe completed")
+	assert.Contains(t, logs.String(), "nats subscription completed")
+	assert.Contains(t, logs.String(), "nats closesubscription completed")
 }
 
 func Test_Custom_Settings(t *testing.T) {
@@ -502,5 +502,5 @@ func Test_Reconnect(t *testing.T) {
 	Close()
 	// assert
 	assert.Contains(t, logs.String(), "nats ping server failed, reconnect now...")
-	assert.Contains(t, logs.String(), "nats subscribe completed")
+	assert.Contains(t, logs.String(), "nats subscription completed")
 }
