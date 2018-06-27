@@ -389,6 +389,7 @@ namespace Deluxe.One.Nats
                 {"serviceID", _serviceID },
                 {"clientID", _clientID },
                 {"onenatsVersion", getOneNatsVersion()},
+                {"lang", ".net"},
             };
         }
 
