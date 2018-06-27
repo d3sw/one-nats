@@ -55,7 +55,7 @@ func (m *MyService) Startup() error {
 
 func (m *MyService) waitOne(abort chan bool, delay time.Duration) bool {
 	select {
-	case <-time.After(time.Second * 5):
+	case <-time.After(delay):
 		return false
 	case <-m.threadAbort:
 		return true

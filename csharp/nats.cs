@@ -574,7 +574,7 @@ namespace Deluxe.One.Nats
         }
         private void logWarn(Dictionary<string, object> fields, string format, params object[] args)
         {
-            Logger.LogWarning(getLogText("warn", fields, format, args));
+            Logger.LogWarning(getLogText("warning", fields, format, args));
         }
 
         private void logError(Dictionary<string, object> fields, string format, params object[] args)
