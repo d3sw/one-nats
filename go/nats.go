@@ -41,7 +41,7 @@ import (
 )
 
 // Version is the one-nats client
-const Version = "0.1.8"
+const Version = "0.1.9"
 
 // SubToken subscription token
 type SubToken string
@@ -197,7 +197,14 @@ type subRecord struct {
 }
 
 func (m *Nats) getConnLogger() *log.Entry {
-	return log.WithFields(log.Fields{"natsURL": m.serverURL, "clusterID": m.clusterID, "serviceID": m.serviceID, "clientID": m.clientID, "onenatsVersion": Version})
+	return log.WithFields(log.Fields{
+		"natsURL":        m.serverURL,
+		"clusterID":      m.clusterID,
+		"serviceID":      m.serviceID,
+		"clientID":       m.clientID,
+		"onenatsVersion": Version,
+		"lang":           "go",
+	})
 }
 
 // Connect ...
