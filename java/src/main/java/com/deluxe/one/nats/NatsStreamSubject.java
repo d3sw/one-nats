@@ -70,12 +70,12 @@ public class NatsStreamSubject extends NatsAbstractSubject {
 
 			// Create subject/queue subscription if the queue has been provided
 			if (StringUtils.isNotEmpty(queue)) {
-				logger.info("No subscription. Creating a queue subscription. subject={}, queue={}", subject, queue);
+				logger.info(String.format("No subscription. Creating a queue subscription. subject=%s, queue=%s", subject, queue));
 				subs = conn.subscribe(subject, queue,
 						msg -> onMessage(msg.getSubject(), msg.getData()),
 						subscriptionOptions);
 			} else {
-				logger.info("No subscription. Creating a pub/sub subscription. subject={}", subject);
+				logger.info(String.format("No subscription. Creating a pub/sub subscription. subject=%s", subject));
 				subs = conn.subscribe(subject,
 						msg -> onMessage(msg.getSubject(), msg.getData()),
 						subscriptionOptions);
