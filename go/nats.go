@@ -332,13 +332,18 @@ func (m *Nats) reconnectServer() {
 		}
 		// check there is subscription or not
 		if len(m.subs) > 0 {
+			var err error
 			// now ping server
+			m.Lock()
 			if m.conn != nil {
-				if err := m.conn.Publish("ping", nil); err != nil {
-					logger.WithFields(log.Fields{"error": err}).Warnf("nats ping server failed, reconnect now...")
-					// close the connection
-					m.internalClose()
-				}
+				err = m.conn.Publish("ping", nil)
+			}
+			m.Unlock()
+			// check error
+			if err != nil {
+				logger.WithFields(log.Fields{"error": err}).Warnf("nats ping server failed, reconnect now...")
+				// close the connection
+				m.internalClose()
 			}
 			// now reconnect
 			if err := m.reconnect(); err != nil {
@@ -535,7 +540,11 @@ func (m *Nats) Publish(subj string, data []byte, delays ...time.Duration) error 
 		return errors.New("invalid parameter. subject is empty")
 	}
 	// logger
-	logger := log.WithFields(log.Fields{"subject": subj, "data": string(data)})
+	msg := string(data)
+	if len(msg) > 512 {
+		msg = msg[:512]
+	}
+	logger := log.WithFields(log.Fields{"subject": subj, "data": msg})
 	// check delays
 	if delays == nil {
 		delays = m.PublishRetryDelays

@@ -295,7 +295,7 @@ namespace Deluxe.One.Nats
                         item.sub = null;
                         if (error != null)
                         {
-                            fields["error"] = error.Message;
+                            fields["error"] = error;
                             logError(fields, "nats subscription close failed");
                         }
                         else
@@ -457,6 +457,8 @@ namespace Deluxe.One.Nats
         {
             var options = StanSubscriptionOptions.GetDefaultOptions();
             options.DurableName = durable;
+            options.MaxInflight = MaxInflight;
+            options.AckWait = (int)SubscribeAckWait.TotalMilliseconds;
             return QueueSubscribe(subject, queue, options, cb);
         }
         public string QueueSubscribe(string subject, string queue, StanSubscriptionOptions options, EventHandler<StanMsgHandlerArgs> cb)
