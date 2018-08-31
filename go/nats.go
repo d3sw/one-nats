@@ -41,7 +41,7 @@ import (
 )
 
 // Version is the one-nats client
-const Version = "0.1.9"
+const Version = "0.1.10"
 
 // SubToken subscription token
 type SubToken string
@@ -209,6 +209,7 @@ func (m *Nats) getConnLogger() *log.Entry {
 
 // Connect ...
 func (m *Nats) Connect(serverURL, clusterID, serviceID string) error {
+	log.Info("nats connect")
 	// reset values
 	if serverURL == "" {
 		serverURL = "nats://localhost:4222"
