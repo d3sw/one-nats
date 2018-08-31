@@ -6,3 +6,4 @@ target
 artifacts
 bin
 obj
+*.zip
