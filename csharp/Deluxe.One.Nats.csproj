@@ -31,7 +31,10 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="2.1.1" />
-    <PackageReference Include="STAN.Client" Version="0.1.4" />
+  </ItemGroup>  
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\..\..\..\Temp\csharp-nats-streaming-0.1.4\STAN.CLIENT\STAN.CLIENT.csproj" />
   </ItemGroup>
 
 </Project>
