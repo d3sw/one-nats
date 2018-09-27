@@ -7,3 +7,4 @@ artifacts
 bin
 obj
 *.zip
+.DS_STORE
