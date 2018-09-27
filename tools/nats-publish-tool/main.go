@@ -81,15 +81,17 @@ func parseFlags() (URL, clusterID, serviceID string) {
 
 func main() {
 	// init
+	log.SetOutput(os.Stdout)
 	log.SetFormatter(&log.TextFormatter{DisableColors: true, QuoteEmptyFields: true})
 	// flags
 	url, clusterID, clientID := parseFlags()
+	args := flag.Args()
 	// message
-	if len(os.Args) < 3 {
+	if len(args) < 2 {
 		usage()
 		os.Exit(-1)
 	}
-	topic, messages := os.Args[1], os.Args[2:]
+	topic, messages := args[0], args[1:]
 	// now connect
 	nats.Connect(url, clusterID, clientID)
 	for _, msg := range messages {
