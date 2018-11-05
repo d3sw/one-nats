@@ -89,10 +89,10 @@ func main() {
 	var unsubscribe bool
 	var server string
 	// params
-	flag.StringVar(&server, "s", "localhost", "The nats server URLs (separated by comma)")
-	flag.StringVar(&server, "server", "localhost", "The nats server URLs (separated by comma)")
-	flag.StringVar(&clusterID, "c", "test-cluster", "The NATS Streaming cluster ID")
-	flag.StringVar(&clusterID, "cluster", "test-cluster", "The NATS Streaming cluster ID")
+	flag.StringVar(&server, "s", "nats.service.owf-live", "The nats server URLs (separated by comma)")
+	flag.StringVar(&server, "server", "nats.service.owf-live", "The nats server URLs (separated by comma)")
+	flag.StringVar(&clusterID, "c", "events-streaming", "The NATS Streaming cluster ID")
+	flag.StringVar(&clusterID, "cluster", "events-streaming", "The NATS Streaming cluster ID")
 	flag.StringVar(&clientID, "id", "", "The NATS Streaming client ID to connect with")
 	flag.StringVar(&clientID, "clientid", "", "The NATS Streaming client ID to connect with")
 	flag.BoolVar(&showTime, "t", false, "Display timestamps")
@@ -114,9 +114,11 @@ func main() {
 	}
 	// init
 	log.SetFormatter(&log.TextFormatter{DisableColors: true, QuoteEmptyFields: true})
+	log.WithFields(log.Fields{"host": server, "cluster": clusterID}).Info("cleanup nats channels")
 	// now run
 	for _, channel := range args {
 		subs, _ := getSubscriptionsOffline(server, clusterID, channel)
+		log.WithFields(log.Fields{"channel": channel, "subs": len(subs)}).Info("cleanup a channel")
 		// log
 		for _, sub := range subs {
 			// if sub.IsOffline {
@@ -171,6 +173,7 @@ func getSubscriptions(server string, cluster string, channel string) ([]Subscrip
 	url := fmt.Sprintf("http://%s:8222/streaming/channelsz?channel=%s&subs=1", server, channel)
 	var item Channel
 	err := getJSON(url, &item)
+	log.Info("url", url, "err:", err)
 	if err != nil {
 		return nil, err
 	}
