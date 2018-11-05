@@ -112,24 +112,21 @@ func main() {
 		log.Printf("Error: A channel must be specified.")
 		usage()
 	}
-	channel := args[0]
-	if channel == "" {
-		log.Printf("Error: A channel must be specified.")
-		usage()
-	}
 	// init
 	log.SetFormatter(&log.TextFormatter{DisableColors: true, QuoteEmptyFields: true})
 	// now run
-	subs, _ := getSubscriptionsOffline(server, clusterID, channel)
-	// log
-	for _, sub := range subs {
-		if sub.IsOffline {
+	for _, channel := range args {
+		subs, _ := getSubscriptionsOffline(server, clusterID, channel)
+		// log
+		for _, sub := range subs {
+			// if sub.IsOffline {
 			err := unscribeOfflineClient(server, clusterID, channel, sub)
 			if err != nil {
 				log.WithFields(log.Fields{"sub": sub, "error": err}).Error("unscribe failed")
 			} else {
 				log.WithFields(log.Fields{"clientID": sub.ClientID, "queueName": sub.QueueName}).Info("unscribe completed")
 			}
+			// }
 		}
 	}
 }
@@ -187,9 +184,9 @@ func getSubscriptionsOffline(server string, cluster string, channel string) ([]S
 		return nil, err
 	}
 	for _, sub := range subs {
-		if sub.IsOffline {
-			ret = append(ret, sub)
-		}
+		// if sub.IsOffline {
+		ret = append(ret, sub)
+		// }
 	}
 	return ret, nil
 }
